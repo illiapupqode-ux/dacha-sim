@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dacha Sim</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; overflow: hidden; background: #87aec8; }
+      canvas { display: block; width: 100%; height: 100%; }
+      #hint {
+        position: fixed; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        color: #f5f0e6; font: 16px/1.4 Georgia, "Times New Roman", serif;
+        background: rgba(20, 28, 22, 0.45); cursor: pointer; user-select: none; z-index: 1;
+      }
+      #hint.hidden { display: none; }
+      #crosshair {
+        position: fixed; left: 50%; top: 50%;
+        width: 10px; height: 10px; margin: -5px 0 0 -5px;
+        border: 2px solid rgba(255,255,255,0.85);
+        border-radius: 50%; pointer-events: none; z-index: 2; display: none;
+      }
+      #hud {
+        position: fixed; left: 12px; top: 12px; z-index: 2;
+        color: #e8f5e9; font: 15px/1.45 Georgia, "Times New Roman", serif;
+        text-shadow: 0 1px 2px #000; pointer-events: none;
+      }
+      #menu {
+        position: fixed; inset: 0; z-index: 5;
+        display: none; align-items: center; justify-content: center;
+        background: rgba(12, 18, 14, 0.72);
+      }
+      #menu.open { display: flex; }
+      #menu .panel {
+        background: #1e2a22; color: #f0ebe3; padding: 28px 36px;
+        border: 1px solid #3d5244; min-width: 240px; text-align: center;
+        font: 16px/1.4 Georgia, "Times New Roman", serif;
+      }
+      #menu h1 { font-size: 22px; margin-bottom: 8px; font-weight: normal; }
+      #menu p { opacity: 0.75; margin-bottom: 18px; font-size: 14px; }
+      #menu button {
+        display: block; width: 100%; margin: 8px 0; padding: 10px 14px;
+        font: inherit; cursor: pointer; border: 1px solid #5a7260;
+        background: #2c3d32; color: #f0ebe3;
+      }
+      #menu button:hover { background: #3a5042; }
+      #menu .stats { margin: 12px 0 16px; font-size: 14px; opacity: 0.9; }
+      #mobile-ui {
+        display: none; position: fixed; inset: 0; z-index: 6;
+        pointer-events: none; touch-action: none;
+      }
+      #mobile-ui.on { display: block; }
+      #joy-zone {
+        position: absolute; left: max(12px, env(safe-area-inset-left));
+        bottom: max(18px, env(safe-area-inset-bottom));
+        width: 148px; height: 148px; pointer-events: auto; z-index: 7;
+      }
+      #joy-base {
+        position: absolute; inset: 8px;
+        border-radius: 50%;
+        background: rgba(18, 24, 20, 0.55);
+        border: 3px solid rgba(245, 240, 230, 0.75);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+      }
+      #joy-stick {
+        position: absolute; left: 50%; top: 50%;
+        width: 58px; height: 58px; margin: -29px 0 0 -29px;
+        border-radius: 50%;
+        background: rgba(245, 240, 230, 0.85);
+        border: 3px solid #fff;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+        will-change: transform;
+      }
+      #btn-fire {
+        position: absolute; right: max(18px, env(safe-area-inset-right));
+        bottom: max(32px, env(safe-area-inset-bottom));
+        width: 92px; height: 92px; border-radius: 50%;
+        pointer-events: auto; touch-action: none; z-index: 7;
+        border: 3px solid rgba(255, 235, 230, 0.9);
+        background: rgba(180, 42, 36, 0.82);
+        color: #fff; font: 16px/1 Georgia, "Times New Roman", serif;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+        -webkit-user-select: none; user-select: none;
+      }
+      #btn-fire:active, #btn-fire.down {
+        background: rgba(220, 55, 45, 0.95);
+        transform: scale(0.94);
+      }
+      #btn-pause-m {
+        position: absolute; right: max(12px, env(safe-area-inset-right)); top: 12px;
+        width: 44px; height: 44px; border-radius: 8px;
+        pointer-events: auto; touch-action: none; z-index: 7;
+        border: 1px solid rgba(240, 235, 227, 0.55);
+        background: rgba(20, 28, 22, 0.6);
+        color: #f0ebe3; font: 18px/1 Georgia, serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="hint">Click / tap to play — WASD, shoot zombies, ESC = menu</div>
+    <div id="crosshair"></div>
+    <div id="hud">
+      <div id="hp">HP: ♥♥♥♥♥</div>
+      <div id="kills">Kills: 0</div>
+      <div id="wave">Wave: 1</div>
+    </div>
+    <div id="mobile-ui">
+      <div id="joy-zone">
+        <div id="joy-base"></div>
+        <div id="joy-stick"></div>
+      </div>
+      <button type="button" id="btn-fire" aria-label="Shoot">Fire</button>
+      <button type="button" id="btn-pause-m" aria-label="Pause">☰</button>
+    </div>
+    <div id="menu">
+      <div class="panel">
+        <h1 id="menu-title">Paused</h1>
+        <p id="menu-sub">Spawn & mobs frozen</p>
+        <div class="stats" id="menu-stats"></div>
+        <button type="button" id="btn-resume">Resume</button>
+        <button type="button" id="btn-restart">Restart</button>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
