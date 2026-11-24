@@ -4,7 +4,7 @@ import { resolveWorldXZ } from './collision.js'
 
 const SPEED = 6
 const EYE = 1.6
-const MAX_HP = 5
+const MAX_HP = 10
 const LOOK_SENS = 0.0024
 
 /** True only for real touch-first devices (not Mac trackpad / narrow desktop). */
@@ -26,11 +26,13 @@ export function createPlayer(camera, domElement) {
   let muzzleT = 0
   let hp = MAX_HP
   let hurtCD = 0
+  let hurtFlash = 0
   let paused = false
   let dead = false
   let mobilePlaying = false
   let escArmed = true
   let useMobile = preferTouchPlay()
+  const hurtEl = document.getElementById('hurt-flash')
 
   const gun = new THREE.Group()
   const wood = new THREE.MeshLambertMaterial({ color: 0x4e342e, flatShading: true })
@@ -143,7 +145,7 @@ export function createPlayer(camera, domElement) {
     if (!useMobile || paused || dead) hideMobileUi()
   })
 
-  // ——— joystick + fire (touch + mouse/pointer) ———
+  // —— joystick + fire (touch + mouse/pointer) ——
   const joyZone = document.getElementById('joy-zone')
   const joyStick = document.getElementById('joy-stick')
   const btnFire = document.getElementById('btn-fire')
@@ -342,6 +344,12 @@ export function createPlayer(camera, domElement) {
 
   function update(dt) {
     if (hurtCD > 0) hurtCD -= dt
+    if (hurtFlash > 0) {
+      hurtFlash = Math.max(0, hurtFlash - dt * 2.8)
+      if (hurtEl) hurtEl.style.opacity = String(Math.min(1, hurtFlash))
+    } else if (hurtEl && hurtEl.style.opacity !== '0') {
+      hurtEl.style.opacity = '0'
+    }
 
     if (kick > 0) {
       kick = Math.max(0, kick - dt * 8)
@@ -427,6 +435,8 @@ export function createPlayer(camera, domElement) {
       if (dead || paused || hurtCD > 0) return false
       hp = Math.max(0, hp - n)
       hurtCD = 1.0
+      hurtFlash = 1
+      if (hurtEl) hurtEl.style.opacity = '1'
       updateHpUi()
       if (hp <= 0) {
         dead = true
@@ -437,10 +447,19 @@ export function createPlayer(camera, domElement) {
       }
       return false
     },
+    heal(n = 5) {
+      if (dead) return false
+      const before = hp
+      hp = Math.min(MAX_HP, hp + n)
+      updateHpUi()
+      return hp > before
+    },
     resetHp() {
       hp = MAX_HP
       dead = false
       hurtCD = 0
+      hurtFlash = 0
+      if (hurtEl) hurtEl.style.opacity = '0'
       updateHpUi()
     },
     isDead: () => dead,
