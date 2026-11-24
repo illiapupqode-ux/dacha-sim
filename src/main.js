@@ -3,6 +3,8 @@ import { buildWorld } from './world.js'
 import { createPlayer } from './player.js'
 import { createZombieSystem } from './zombies.js'
 import { createNightCycle } from './night.js'
+import { createHealthPickup } from './pickup.js'
+import { getDifficulty, getDifficultyId, setDifficulty, getCoef } from './difficulty.js'
 
 const scene = new THREE.Scene()
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 120)
@@ -45,6 +47,30 @@ const night = createNightCycle({
   getWave: () => zombies.getWave(),
   startAtNight: false,
 })
+const healthPickup = createHealthPickup(scene, () => camera.position, {
+  heal: (n) => player.heal(n),
+  getNight: () => night.getNight(),
+  getWave: () => zombies.getWave(),
+})
+
+function syncDiffButtons() {
+  const id = getDifficultyId()
+  document.querySelectorAll('#diff-row [data-diff]').forEach((btn) => {
+    btn.classList.toggle('active', btn.getAttribute('data-diff') === id)
+  })
+}
+
+document.getElementById('diff-row')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-diff]')
+  if (!btn) return
+  setDifficulty(btn.getAttribute('data-diff'))
+  syncDiffButtons()
+  if (menuStats) {
+    const d = getDifficulty()
+    menuStats.textContent = `Kills: ${zombies.getKills()} · Wave: ${zombies.getWave()} · ${d.label} ×${getCoef()}`
+  }
+})
+syncDiffButtons()
 
 player.setShootHandler(() => {
   if (!paused && !gameOver) zombies.tryShoot(camera)
@@ -58,7 +84,9 @@ function openMenu(kind = 'pause') {
   menuTitle.textContent = kind === 'dead' ? 'You died' : 'Paused'
   menuSub.textContent =
     kind === 'dead' ? 'Zombies got you' : 'Spawn & mobs frozen — ESC / Resume'
-  menuStats.textContent = `Kills: ${zombies.getKills()} · Wave: ${zombies.getWave()}`
+  const d = getDifficulty()
+  menuStats.textContent = `Kills: ${zombies.getKills()} · Wave: ${zombies.getWave()} · ${d.label} ×${getCoef()}`
+  syncDiffButtons()
   menu?.classList.add('open')
   hint?.classList.add('hidden')
   document.getElementById('btn-resume').style.display = kind === 'dead' ? 'none' : 'block'
@@ -81,6 +109,7 @@ function restart() {
   player.setSpawn(spawn)
   zombies.reset()
   night.reset()
+  healthPickup.reset()
   player.setPaused(false)
   menu?.classList.remove('open')
   document.getElementById('btn-resume').style.display = 'block'
@@ -126,6 +155,7 @@ function tick() {
 
   const n = night.update(paused || gameOver ? 0 : dt)
   zombies.setNight(n)
+  healthPickup.update(dt, { paused: paused || gameOver })
 
   renderer.render(scene, camera)
   requestAnimationFrame(tick)
