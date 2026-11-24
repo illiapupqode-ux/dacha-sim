@@ -46,6 +46,18 @@
       }
       #menu button:hover { background: #3a5042; }
       #menu .stats { margin: 12px 0 16px; font-size: 14px; opacity: 0.9; }
+      #menu .diff-label {
+        margin: 14px 0 6px; font-size: 13px; opacity: 0.7; text-align: left;
+      }
+      #diff-row {
+        display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px;
+      }
+      #diff-row button {
+        margin: 0; padding: 8px 4px; font-size: 13px;
+      }
+      #diff-row button.active {
+        background: #4a6b52; border-color: #9bbb9a; color: #fff;
+      }
       #mobile-ui {
         display: none; position: fixed; inset: 0; z-index: 6;
         pointer-events: none; touch-action: none;
@@ -95,13 +107,21 @@
         background: rgba(20, 28, 22, 0.6);
         color: #f0ebe3; font: 18px/1 Georgia, serif;
       }
+      #hurt-flash {
+        position: fixed; inset: 0; z-index: 3; pointer-events: none;
+        opacity: 0;
+        background:
+          radial-gradient(ellipse at center, transparent 35%, rgba(140, 0, 0, 0.55) 100%),
+          rgba(160, 0, 20, 0.22);
+      }
     </style>
   </head>
   <body>
     <div id="hint">Click / tap to play — WASD, shoot zombies, ESC = menu</div>
     <div id="crosshair"></div>
+    <div id="hurt-flash" aria-hidden="true"></div>
     <div id="hud">
-      <div id="hp">HP: ♥♥♥♥♥</div>
+      <div id="hp">HP: ♥♥♥♥♥♥♥♥♥♥</div>
       <div id="kills">Kills: 0</div>
       <div id="wave">Wave: 1</div>
     </div>
@@ -118,6 +138,13 @@
         <h1 id="menu-title">Paused</h1>
         <p id="menu-sub">Spawn & mobs frozen</p>
         <div class="stats" id="menu-stats"></div>
+        <div class="diff-label">Difficulty</div>
+        <div id="diff-row" role="group" aria-label="Difficulty">
+          <button type="button" data-diff="low">Low</button>
+          <button type="button" data-diff="med">Med</button>
+          <button type="button" data-diff="high">High</button>
+          <button type="button" data-diff="hell">Hell</button>
+        </div>
         <button type="button" id="btn-resume">Resume</button>
         <button type="button" id="btn-restart">Restart</button>
       </div>
