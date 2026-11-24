@@ -1,11 +1,7 @@
 import * as THREE from 'three'
+import { isNightWave } from './difficulty.js'
 
-/** Waves that are night. */
-export const NIGHT_WAVES = new Set([3, 6, 7, 9, 10, 11, 12])
-
-export function isNightWave(wave) {
-  return NIGHT_WAVES.has(wave)
-}
+export { isNightWave }
 
 const DAY_BG = new THREE.Color(0x87aec8)
 const NIGHT_BG = new THREE.Color(0x141c2a)
