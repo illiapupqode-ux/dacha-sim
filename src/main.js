@@ -4,10 +4,11 @@ import { createPlayer } from './player.js'
 import { createZombieSystem } from './zombies.js'
 import { createNightCycle } from './night.js'
 import { createHealthPickup } from './pickup.js'
+import { createAmmoSystem } from './ammo.js'
 import { getDifficulty, getDifficultyId, setDifficulty, getCoef } from './difficulty.js'
 
 const scene = new THREE.Scene()
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 120)
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 36)
 scene.add(camera)
 const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setSize(window.innerWidth, window.innerHeight)
@@ -30,14 +31,34 @@ const hint = document.getElementById('hint')
 let paused = false
 let gameOver = false
 
-const updateHud = ({ kills, wave }) => {
+let ammo = null
+const updateHud = ({ kills, wave } = {}) => {
   const k = document.getElementById('kills')
   const w = document.getElementById('wave')
-  if (k) k.textContent = `Kills: ${kills}`
-  if (w) w.textContent = `Wave: ${wave}`
+  const a = document.getElementById('ammo')
+  if (k && kills != null) k.textContent = `Kills: ${kills}`
+  if (w && wave != null) w.textContent = `Wave: ${wave}`
+  if (a && ammo) a.textContent = `Ammo: ${ammo.getAmmo()}`
 }
 
-const zombies = createZombieSystem(scene, () => camera.position, updateHud)
+let toastTimer = 0
+function showToast(text, ms = 2200) {
+  const el = document.getElementById('toast')
+  if (!el) return
+  el.textContent = text
+  el.classList.add('show')
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => el.classList.remove('show'), ms)
+}
+
+ammo = createAmmoSystem(scene, () => camera.position, {
+  onChange: () => updateHud(),
+})
+
+const zombies = createZombieSystem(scene, () => camera.position, updateHud, {
+  onTerentyevHit: () => showToast("You cant kill Terentevs!"),
+  onKill: () => ammo.onKill(),
+})
 const night = createNightCycle({
   scene,
   ambient,
@@ -52,6 +73,7 @@ const healthPickup = createHealthPickup(scene, () => camera.position, {
   getNight: () => night.getNight(),
   getWave: () => zombies.getWave(),
 })
+updateHud({ kills: 0, wave: 1 })
 
 function syncDiffButtons() {
   const id = getDifficultyId()
@@ -73,7 +95,12 @@ document.getElementById('diff-row')?.addEventListener('click', (e) => {
 syncDiffButtons()
 
 player.setShootHandler(() => {
-  if (!paused && !gameOver) zombies.tryShoot(camera)
+  if (paused || gameOver) return
+  if (!ammo.tryFire()) {
+    showToast('Empty!', 900)
+    return
+  }
+  zombies.tryShoot(camera)
 })
 
 function openMenu(kind = 'pause') {
@@ -110,6 +137,7 @@ function restart() {
   zombies.reset()
   night.reset()
   healthPickup.reset()
+  ammo.reset()
   player.setPaused(false)
   menu?.classList.remove('open')
   document.getElementById('btn-resume').style.display = 'block'
@@ -156,6 +184,7 @@ function tick() {
   const n = night.update(paused || gameOver ? 0 : dt)
   zombies.setNight(n)
   healthPickup.update(dt, { paused: paused || gameOver })
+  ammo.update(dt, { paused: paused || gameOver })
 
   renderer.render(scene, camera)
   requestAnimationFrame(tick)

@@ -32,8 +32,9 @@ export function createNightCycle({
     scene.background.copy(DAY_BG).lerp(NIGHT_BG, n)
     if (scene.fog) {
       scene.fog.color.copy(DAY_FOG).lerp(NIGHT_FOG, n)
-      scene.fog.near = 22 - n * 4
-      scene.fog.far = 55 - n * 8
+      // denser fog — culls distant forest/meshes for perf
+      scene.fog.near = 8 - n * 2
+      scene.fog.far = 28 - n * 6
     }
     ambient.color.copy(DAY_AMB).lerp(NIGHT_AMB, n)
     ambient.intensity = 0.55 - n * 0.18
