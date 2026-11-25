@@ -7,6 +7,7 @@ import {
   ZOMBIE_FENCE_SCALE,
   plotFrontZ,
   insidePlot,
+  insideAnyYard,
   insideZombiePlot,
   resolveZombieXZ,
   randomOutsideSpawn,
@@ -355,6 +356,7 @@ export function createZombieSystem(scene, getPlayerPos, onStats, hooks = {}) {
     z.userData.climbing = false
     z.userData.climbOut = false
     z.userData.fromZombieYard = !!useClimber
+    z.userData.hasEntered = false
     scene.add(z)
     list.push(z)
   }
@@ -596,6 +598,7 @@ export function createZombieSystem(scene, getPlayerPos, onStats, hooks = {}) {
           z.position.y = 0
           z.position.x = b.x
           z.position.z = b.z
+          if (insideAnyYard(b.x, b.z, 0)) z.userData.hasEntered = true
         }
         continue
       }
@@ -619,10 +622,12 @@ export function createZombieSystem(scene, getPlayerPos, onStats, hooks = {}) {
       if (
         z.userData.climber &&
         !z.userData.fromZombieYard &&
+        !z.userData.hasEntered &&
         !insidePlot(z.position.x, z.position.z, 0.2) &&
         nearFenceOutside(z.position.x, z.position.z)
       ) {
         z.userData.climbing = true
+        z.userData.climbOut = false
         z.userData.climbT = 0
         z.userData.climbFrom = { x: z.position.x, z: z.position.z }
         z.userData.climbTo = climbTargets(z.position.x, z.position.z)
@@ -631,8 +636,11 @@ export function createZombieSystem(scene, getPlayerPos, onStats, hooks = {}) {
 
       z.userData.bob += dt * 5
       const inside = insidePlot(z.position.x, z.position.z, 0.15)
+      const inAnyYard = insideAnyYard(z.position.x, z.position.z, 0.1)
       const inZombieYard = insideZombiePlot(z.position.x, z.position.z, 0.1)
-      const canEnter = z.userData.climber || inside
+      if (inside || inAnyYard) z.userData.hasEntered = true
+      // after first entry, keep chasing player on any plot (don't snap back to spawn/gate)
+      const canEnter = z.userData.climber || z.userData.hasEntered || inside
 
       // greens outside: go to front gate first, then player
       // climbers still in zombie yard: walk toward nearest exit edge facing player
