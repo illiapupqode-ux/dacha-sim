@@ -145,7 +145,7 @@ export function createPlayer(camera, domElement) {
     if (!useMobile || paused || dead) hideMobileUi()
   })
 
-  // —— joystick + fire (touch + mouse/pointer) ——
+  // ——— joystick + fire (touch + mouse/pointer) ———
   const joyZone = document.getElementById('joy-zone')
   const joyStick = document.getElementById('joy-stick')
   const btnFire = document.getElementById('btn-fire')

@@ -2,21 +2,38 @@ import * as THREE from 'three'
 import {
   PLOT_W,
   PLOT_D,
+  PLOT_Z0,
   GATE_HALF,
+  ZOMBIE_FENCE_SCALE,
+  plotFrontZ,
   insidePlot,
+  insideZombiePlot,
   resolveZombieXZ,
   randomOutsideSpawn,
+  randomZombiePlotSpawn,
+  randomFarPlotSpawn,
+  clampInsideZombiePlot,
+  clampInsideFarPlot,
+  TERENTYEV_BEDS,
+  splitLeftX,
+  splitRightX,
+  zombieBackZ,
+  zombieFrontZ,
 } from './collision.js'
+import { getWavePlan } from './difficulty.js'
 
 const SPEED = 2.0
+const TERENTYEV_SPEED = SPEED * 2
 const HIT_R = 0.9
-const HP = 3
+const DEFAULT_HP = 3
 const EMERGE_Y = -2.2
 const EMERGE_SPEED = 2.4
 const WAVE_GAP = 3.5
 const SPAWN_GAP = 1.1
 const TOUCH_R = 1.35
 const CLIMB_DUR = 1.35
+const CLIMB_OUT_DUR = 1.55
+const ZOMBIE_CLIMB_H = 2.2 * ZOMBIE_FENCE_SCALE
 
 function makeMat(color) {
   return new THREE.MeshLambertMaterial({ color, flatShading: true })
@@ -37,6 +54,13 @@ const PALETTE = {
     leg: 0x373737,
     brow: 0x212121,
   },
+  blue: {
+    body: 0x1565c0,
+    head: 0x0d47a1,
+    arm: 0x1e88e5,
+    leg: 0x0d47a1,
+    brow: 0x061a3a,
+  },
 }
 
 export function makeZombie(kind = 'green') {
@@ -45,6 +69,9 @@ export function makeZombie(kind = 'green') {
   g.userData.isZombie = true
   g.userData.kind = kind
   g.userData.climber = kind === 'gray'
+  g.userData.ambient = kind === 'blue'
+  g.userData.immortal = kind === 'blue'
+  g.userData.noAttack = kind === 'blue'
 
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.65, 1.0, 0.4), makeMat(p.body))
   body.position.y = 1.1
@@ -113,9 +140,21 @@ function findZombieRoot(obj) {
   return obj
 }
 
-function damageZombie(z, killsRef, onStats) {
+function damageZombie(z, killsRef, onStats, onTerentyevHit, onKill) {
   if (!z?.userData?.alive || z.userData.emerging || z.userData.climbing) return false
-  z.userData.hp = (z.userData.hp ?? HP) - 1
+  // Тєрєнтьєв blues — immortal; still flash so shots feel registered
+  if (z.userData.immortal) {
+    z.userData.flash = 0.12
+    z.traverse((c) => {
+      if (c.isMesh && c.material?.color) {
+        c.userData._baseColor = c.userData._baseColor || c.material.color.getHex()
+        c.material.color.setHex(0x90caf9)
+      }
+    })
+    onTerentyevHit?.()
+    return true
+  }
+  z.userData.hp = (z.userData.hp ?? DEFAULT_HP) - 1
   z.userData.flash = 0.15
   z.traverse((c) => {
     if (c.isMesh && c.material?.color) {
@@ -126,8 +165,19 @@ function damageZombie(z, killsRef, onStats) {
   if (z.userData.hp <= 0) {
     z.userData.alive = false
     z.userData.dieT = 0
+    z.userData.dieStartY = z.position.y
+    z.userData.dieSpin = (Math.random() < 0.5 ? -1 : 1) * (1.2 + Math.random() * 1.4)
+    z.traverse((c) => {
+      if (c.isMesh && c.material) {
+        c.material = c.material.clone()
+        c.material.transparent = true
+        c.material.depthWrite = false
+        if (c.material.emissive) c.material.emissiveIntensity = 0
+      }
+    })
     killsRef.n++
     onStats?.()
+    onKill?.()
     return true
   }
   return true
@@ -136,24 +186,68 @@ function damageZombie(z, killsRef, onStats) {
 function nearFenceOutside(x, z, band = 2.2) {
   const hw = PLOT_W / 2
   const hd = PLOT_D / 2
+  const lz = z - PLOT_Z0
   if (insidePlot(x, z, 0.05)) return false
-  const nearX = Math.abs(x) >= hw - 0.3 && Math.abs(x) <= hw + band && Math.abs(z) <= hd + band
-  const nearZ = Math.abs(z) >= hd - 0.3 && Math.abs(z) <= hd + band && Math.abs(x) <= hw + band
+  const nearX = Math.abs(x) >= hw - 0.3 && Math.abs(x) <= hw + band && Math.abs(lz) <= hd + band
+  const nearZ = Math.abs(lz) >= hd - 0.3 && Math.abs(lz) <= hd + band && Math.abs(x) <= hw + band
   return nearX || nearZ
 }
 
 function climbTargets(x, z) {
   const hw = PLOT_W / 2 - 0.6
-  const hd = PLOT_D / 2 - 0.6
-  // land just inside nearest edge
-  if (Math.abs(x) / (PLOT_W / 2) >= Math.abs(z) / (PLOT_D / 2)) {
-    return { x: Math.sign(x || 1) * hw, z: Math.max(-hd, Math.min(hd, z)) }
+  const zMin = PLOT_Z0 - (PLOT_D / 2 - 0.6)
+  const zMax = PLOT_Z0 + (PLOT_D / 2 - 0.6)
+  const lz = z - PLOT_Z0
+  // land just inside nearest edge of my plot
+  if (Math.abs(x) / (PLOT_W / 2) >= Math.abs(lz) / (PLOT_D / 2)) {
+    return { x: Math.sign(x || 1) * hw, z: Math.max(zMin, Math.min(zMax, z)) }
   }
-  return { x: Math.max(-hw, Math.min(hw, x)), z: Math.sign(z || 1) * hd }
+  return { x: Math.max(-hw, Math.min(hw, x)), z: Math.sign(lz || 1) * (PLOT_D / 2 - 0.6) + PLOT_Z0 }
 }
 
-export function createZombieSystem(scene, getPlayerPos, onStats) {
+function nearZombieFenceInside(x, z, band = 1.6) {
+  if (!insideZombiePlot(x, z, 0.05)) return false
+  const x0 = splitLeftX()
+  const x1 = splitRightX()
+  const z0 = zombieBackZ()
+  const z1 = zombieFrontZ()
+  return (
+    x <= x0 + band ||
+    x >= x1 - band ||
+    z <= z0 + band ||
+    z >= z1 - band
+  )
+}
+
+/** Climb out of sealed zombie paddock toward the player. */
+function climbOutOfZombieTarget(x, z, px, pz) {
+  const x0 = splitLeftX()
+  const x1 = splitRightX()
+  const z0 = zombieBackZ()
+  const z1 = zombieFrontZ()
+  const pad = 1.35
+  const candidates = [
+    { x: x0 - pad, z },
+    { x: x1 + pad, z },
+    { x, z: z0 - pad },
+    { x, z: z1 + pad },
+  ]
+  let best = candidates[0]
+  let bestD = Infinity
+  for (const c of candidates) {
+    const d = Math.hypot(c.x - px, c.z - pz)
+    if (d < bestD) {
+      bestD = d
+      best = c
+    }
+  }
+  return best
+}
+
+export function createZombieSystem(scene, getPlayerPos, onStats, hooks = {}) {
+  const { onTerentyevHit, onKill } = hooks
   const list = []
+  const ambient = []
   const raycaster = new THREE.Raycaster()
   const killsRef = { n: 0 }
   let wave = 1
@@ -162,34 +256,122 @@ export function createZombieSystem(scene, getPlayerPos, onStats) {
   let betweenWaves = 1.2
   let phase = 'countdown'
   let spawnTotal = 0
+  let climbersLeft = 0
+  let waveHp = DEFAULT_HP
   let frozen = false
+  let nightLevel = 0
 
-  const waveSize = (w) => 2 + w
+  const allZombies = () => list.concat(ambient)
+
+  const clearWaterFx = (z) => {
+    if (z.userData.waterFx) {
+      scene.remove(z.userData.waterFx)
+      z.userData.waterFx = null
+    }
+  }
+
+  const ensureWaterFx = (z) => {
+    if (z.userData.waterFx) return z.userData.waterFx
+    const fx = new THREE.Group()
+    fx.userData.drops = []
+    for (let i = 0; i < 10; i++) {
+      const drop = new THREE.Mesh(
+        new THREE.SphereGeometry(0.04, 4, 3),
+        makeMat(0x64b5f6),
+      )
+      drop.position.set(0, 0, 0)
+      drop.visible = false
+      fx.add(drop)
+      fx.userData.drops.push({ mesh: drop, t: Math.random() })
+    }
+    // watering can
+    const can = new THREE.Group()
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.18, 0.28), makeMat(0x455a64))
+    body.position.y = 0.1
+    can.add(body)
+    const spout = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.28), makeMat(0x607d8b))
+    spout.position.set(0.08, 0.14, 0.22)
+    spout.rotation.x = -0.55
+    can.add(spout)
+    can.position.set(0.35, 1.15, 0.35)
+    fx.add(can)
+    fx.userData.can = can
+    scene.add(fx)
+    z.userData.waterFx = fx
+    return fx
+  }
 
   const refreshUi = () => {
-    onStats?.({ kills: killsRef.n, wave, alive: list.filter((z) => z.userData.alive).length })
+    onStats?.({
+      kills: killsRef.n,
+      wave,
+      alive: list.filter((z) => z.userData.alive).length,
+    })
+  }
+
+  const spawnTerentyev = () => {
+    for (const z of ambient) {
+      clearWaterFx(z)
+      scene.remove(z)
+    }
+    ambient.length = 0
+    for (let i = 0; i < 2; i++) {
+      const z = makeZombie('blue')
+      const pos = randomFarPlotSpawn(2.2)
+      z.position.set(pos.x, 0, pos.z)
+      z.userData.bob = Math.random() * Math.PI * 2
+      z.userData.alive = true
+      z.userData.emerging = false
+      z.userData.hp = 999
+      z.userData.flash = 0
+      z.userData.climbing = false
+      z.userData.watering = false
+      z.userData.waterT = 0
+      z.userData.bedIndex = i % TERENTYEV_BEDS.length
+      z.userData.patrol = {
+        x: pos.x + (Math.random() * 6 - 3),
+        z: pos.z + (Math.random() * 8 - 4),
+      }
+      scene.add(z)
+      ambient.push(z)
+    }
   }
 
   const spawnOne = () => {
     spawnTotal++
-    const gray = spawnTotal % 6 === 0
-    const z = makeZombie(gray ? 'gray' : 'green')
-    const pos = randomOutsideSpawn(3, 9)
+    const useClimber =
+      climbersLeft > 0 && (climbersLeft >= toSpawn || Math.random() < climbersLeft / Math.max(1, toSpawn))
+    if (useClimber) climbersLeft--
+    const z = makeZombie(useClimber ? 'gray' : 'green')
+    // Climbers emerge inside ділянка зомбі; greens outside as usual
+    const pos = useClimber ? randomZombiePlotSpawn(1.5) : randomOutsideSpawn(3, 9)
     z.position.set(pos.x, EMERGE_Y, pos.z)
     z.userData.bob = Math.random() * Math.PI * 2
     z.userData.alive = true
     z.userData.emerging = true
     z.userData.emergeT = 0
-    z.userData.hp = HP
+    z.userData.hp = waveHp
     z.userData.flash = 0
     z.userData.climbing = false
+    z.userData.climbOut = false
+    z.userData.fromZombieYard = !!useClimber
     scene.add(z)
     list.push(z)
   }
 
   const startWave = () => {
-    toSpawn = waveSize(wave)
+    const plan = getWavePlan(wave)
+    toSpawn = plan.zombies
+    climbersLeft = plan.climbers
+    waveHp = plan.zombieHp
     spawnCD = 0
+    if (plan.zombies <= 0) {
+      // Peace / no mobs: advance day-night on a slow timer, never spawn
+      phase = 'peace'
+      betweenWaves = 10
+      refreshUi()
+      return
+    }
     phase = 'spawning'
     refreshUi()
   }
@@ -201,6 +383,7 @@ export function createZombieSystem(scene, getPlayerPos, onStats) {
 
   const reset = () => {
     clearAll()
+    spawnTerentyev()
     killsRef.n = 0
     wave = 1
     phase = 'countdown'
@@ -231,15 +414,117 @@ export function createZombieSystem(scene, getPlayerPos, onStats) {
       }
       if (toSpawn <= 0) phase = 'fighting'
     } else if (phase === 'fighting') {
+      // ignore ambient (Тєрєнтьєв) when clearing a wave
       if (!list.some((z) => z.userData.alive) && list.length === 0) {
         wave++
         phase = 'countdown'
         betweenWaves = WAVE_GAP
         refreshUi()
       }
+    } else if (phase === 'peace') {
+      betweenWaves -= dt
+      if (betweenWaves <= 0) {
+        wave++
+        betweenWaves = 10
+        refreshUi()
+        // re-check in case difficulty changed mid-run
+        const plan = getWavePlan(wave)
+        if (plan.zombies > 0) {
+          phase = 'countdown'
+          betweenWaves = 0.4
+        }
+      }
     }
 
     const p = getPlayerPos()
+
+    // ambient Тєрєнтьєв blues — patrol by day; water beds at night
+    if (!frozen && !paused) {
+      const wateringNight = nightLevel > 0.45
+      for (const z of ambient) {
+        if (z.userData.flash > 0) {
+          z.userData.flash -= dt
+          if (z.userData.flash <= 0) {
+            z.traverse((c) => {
+              if (c.isMesh && c.userData._baseColor != null) {
+                c.material.color.setHex(c.userData._baseColor)
+              }
+            })
+          }
+        }
+        z.userData.bob += dt * 7
+
+        let tx
+        let tz
+        if (wateringNight) {
+          const bed = TERENTYEV_BEDS[z.userData.bedIndex % TERENTYEV_BEDS.length]
+          tx = bed.x
+          tz = bed.z
+          const distBed = Math.hypot(tx - z.position.x, tz - z.position.z)
+          if (distBed < 1.1) {
+            z.userData.watering = true
+            z.userData.waterT = (z.userData.waterT || 0) + dt
+            const fx = ensureWaterFx(z)
+            fx.position.set(z.position.x, 0, z.position.z)
+            fx.rotation.y = z.rotation.y
+            if (fx.userData.can) {
+              fx.userData.can.rotation.x = -0.35 + Math.sin(z.userData.waterT * 8) * 0.08
+            }
+            for (const drop of fx.userData.drops) {
+              drop.t += dt * 2.4
+              if (drop.t > 1) drop.t -= 1
+              const t = drop.t
+              drop.mesh.visible = true
+              drop.mesh.position.set(
+                0.45 + (Math.random() - 0.5) * 0.08,
+                1.25 - t * 1.15,
+                0.55 + t * 0.35 + (Math.random() - 0.5) * 0.1,
+              )
+            }
+            if (z.userData.waterT > 2.4) {
+              z.userData.waterT = 0
+              z.userData.bedIndex = (z.userData.bedIndex + 1) % TERENTYEV_BEDS.length
+              z.userData.watering = false
+              clearWaterFx(z)
+            }
+          } else {
+            z.userData.watering = false
+            z.userData.waterT = 0
+            clearWaterFx(z)
+          }
+        } else {
+          z.userData.watering = false
+          z.userData.waterT = 0
+          clearWaterFx(z)
+          tx = z.userData.patrol?.x ?? z.position.x
+          tz = z.userData.patrol?.z ?? z.position.z
+          const distP = Math.hypot(tx - z.position.x, tz - z.position.z)
+          if (distP < 0.8) {
+            const next = randomFarPlotSpawn(2.5)
+            z.userData.patrol = next
+            tx = next.x
+            tz = next.z
+          }
+        }
+
+        if (!z.userData.watering) {
+          const dx = tx - z.position.x
+          const dz = tz - z.position.z
+          const distAim = Math.hypot(dx, dz) || 1
+          let nx = z.position.x + (dx / distAim) * TERENTYEV_SPEED * dt
+          let nz = z.position.z + (dz / distAim) * TERENTYEV_SPEED * dt
+          const c = clampInsideFarPlot(nx, nz, 0.55)
+          z.position.x = c.x
+          z.position.z = c.z
+          z.position.y = Math.sin(z.userData.bob) * 0.08
+          z.lookAt(tx, z.position.y, tz)
+        } else {
+          z.position.y = Math.sin(z.userData.bob) * 0.04
+          z.lookAt(tx, z.position.y, tz)
+        }
+      }
+    }
+
     for (let i = list.length - 1; i >= 0; i--) {
       if (frozen || paused) break
       const z = list[i]
@@ -257,9 +542,21 @@ export function createZombieSystem(scene, getPlayerPos, onStats) {
 
       if (!z.userData.alive) {
         z.userData.dieT = (z.userData.dieT || 0) + dt
-        z.rotation.x = Math.min(1.5, z.userData.dieT * 3.5)
-        z.position.y -= dt * 1.2
-        if (z.userData.dieT > 1.1) {
+        const t = z.userData.dieT
+        const spin = z.userData.dieSpin || 1.5
+        // tumble, sink, shrink, fade
+        z.rotation.x = Math.min(1.62, t * 3.2)
+        z.rotation.z = Math.sin(t * 7) * 0.55 * Math.max(0, 1 - t * 0.7)
+        z.rotation.y += spin * dt
+        const startY = z.userData.dieStartY ?? 0
+        z.position.y = startY - t * t * 2.8
+        const s = Math.max(0.08, 1 - t * 0.65)
+        z.scale.setScalar(s)
+        const fade = Math.max(0, 1 - t * 0.85)
+        z.traverse((c) => {
+          if (c.isMesh && c.material?.opacity != null) c.material.opacity = fade
+        })
+        if (t > 1.35) {
           scene.remove(z)
           list.splice(i, 1)
           refreshUi()
@@ -280,18 +577,22 @@ export function createZombieSystem(scene, getPlayerPos, onStats) {
         continue
       }
 
-      // gray climbers scale the fence
+      // climbing over a fence (out of zombie yard or into my plot)
       if (z.userData.climbing) {
         z.userData.climbT += dt
-        const t = Math.min(1, z.userData.climbT / CLIMB_DUR)
+        const dur = z.userData.climbOut ? CLIMB_OUT_DUR : CLIMB_DUR
+        const peak = z.userData.climbOut ? ZOMBIE_CLIMB_H : 2.2
+        const t = Math.min(1, z.userData.climbT / dur)
         const a = z.userData.climbFrom
         const b = z.userData.climbTo
         z.position.x = a.x + (b.x - a.x) * t
         z.position.z = a.z + (b.z - a.z) * t
-        z.position.y = Math.sin(t * Math.PI) * 2.2
+        z.position.y = Math.sin(t * Math.PI) * peak
         z.lookAt(p.x, 0, p.z)
         if (t >= 1) {
           z.userData.climbing = false
+          z.userData.climbOut = false
+          z.userData.fromZombieYard = false
           z.position.y = 0
           z.position.x = b.x
           z.position.z = b.z
@@ -299,8 +600,25 @@ export function createZombieSystem(scene, getPlayerPos, onStats) {
         continue
       }
 
+      // climbers leave the sealed zombie paddock over the tall board fence
       if (
         z.userData.climber &&
+        z.userData.fromZombieYard &&
+        insideZombiePlot(z.position.x, z.position.z, 0.1) &&
+        nearZombieFenceInside(z.position.x, z.position.z)
+      ) {
+        z.userData.climbing = true
+        z.userData.climbOut = true
+        z.userData.climbT = 0
+        z.userData.climbFrom = { x: z.position.x, z: z.position.z }
+        z.userData.climbTo = climbOutOfZombieTarget(z.position.x, z.position.z, p.x, p.z)
+        continue
+      }
+
+      // then scale my plot fence to reach the player
+      if (
+        z.userData.climber &&
+        !z.userData.fromZombieYard &&
         !insidePlot(z.position.x, z.position.z, 0.2) &&
         nearFenceOutside(z.position.x, z.position.z)
       ) {
@@ -313,16 +631,21 @@ export function createZombieSystem(scene, getPlayerPos, onStats) {
 
       z.userData.bob += dt * 5
       const inside = insidePlot(z.position.x, z.position.z, 0.15)
+      const inZombieYard = insideZombiePlot(z.position.x, z.position.z, 0.1)
       const canEnter = z.userData.climber || inside
 
       // greens outside: go to front gate first, then player
+      // climbers still in zombie yard: walk toward nearest exit edge facing player
       let tx = p.x
       let tz = p.z
-      if (!canEnter && !inside) {
+      if (z.userData.climber && inZombieYard) {
+        const exit = climbOutOfZombieTarget(z.position.x, z.position.z, p.x, p.z)
+        tx = exit.x
+        tz = exit.z
+      } else if (!canEnter && !inside) {
         tx = 0
-        tz = PLOT_D / 2 + 1.2
-        // already aligned with gate — push inward
-        if (Math.abs(z.position.x) < GATE_HALF - 0.2 && z.position.z > PLOT_D / 2 - 1) {
+        tz = plotFrontZ() + 1.2
+        if (Math.abs(z.position.x) < GATE_HALF - 0.2 && z.position.z > plotFrontZ() - 1) {
           tx = p.x
           tz = p.z
         }
@@ -334,9 +657,15 @@ export function createZombieSystem(scene, getPlayerPos, onStats) {
       let nx = z.position.x + (dx / distAim) * SPEED * dt
       let nz = z.position.z + (dz / distAim) * SPEED * dt
 
-      const c = resolveZombieXZ(nx, nz, 0.55, { canEnter })
-      nx = c.x
-      nz = c.z
+      if (inZombieYard && z.userData.fromZombieYard) {
+        const c = clampInsideZombiePlot(nx, nz, 0.55)
+        nx = c.x
+        nz = c.z
+      } else {
+        const c = resolveZombieXZ(nx, nz, 0.55, { canEnter })
+        nx = c.x
+        nz = c.z
+      }
 
       z.position.x = nx
       z.position.z = nz
@@ -345,7 +674,7 @@ export function createZombieSystem(scene, getPlayerPos, onStats) {
 
       const dist = Math.hypot(p.x - z.position.x, p.z - z.position.z) || 1
 
-      if (dist < TOUCH_R) {
+      if (!z.userData.noAttack && dist < TOUCH_R) {
         const died = onPlayerHit?.(1)
         if (died) {
           frozen = true
@@ -357,11 +686,11 @@ export function createZombieSystem(scene, getPlayerPos, onStats) {
 
   const tryShoot = (camera) => {
     if (frozen) return false
-    const hit = (z) => damageZombie(z, killsRef, refreshUi)
+    const hit = (z) => damageZombie(z, killsRef, refreshUi, onTerentyevHit, onKill)
 
     raycaster.setFromCamera(new THREE.Vector2(0, 0), camera)
     const meshes = []
-    list.forEach((z) => {
+    allZombies().forEach((z) => {
       if (!z.userData.alive) return
       z.traverse((c) => {
         if (c.isMesh) meshes.push(c)
@@ -376,7 +705,7 @@ export function createZombieSystem(scene, getPlayerPos, onStats) {
     const origin = camera.position
     const dir = new THREE.Vector3()
     camera.getWorldDirection(dir)
-    for (const z of list) {
+    for (const z of allZombies()) {
       if (!z.userData.alive || z.userData.emerging || z.userData.climbing) continue
       const to = z.position.clone().setY(1.2).sub(origin)
       const dist = to.length()
@@ -389,15 +718,20 @@ export function createZombieSystem(scene, getPlayerPos, onStats) {
   }
 
   const setNight = (n) => {
-    const glow = Math.max(0, Math.min(1, n)) * 2.2
-    for (const z of list) {
+    nightLevel = Math.max(0, Math.min(1, n))
+    const glow = nightLevel * 2.2
+    for (const z of allZombies()) {
       for (const m of z.userData.eyeMats || []) {
         m.emissiveIntensity = glow
         m.color.setHex(glow > 0.15 ? 0xff5252 : 0xff1744)
       }
     }
+    if (nightLevel < 0.35) {
+      for (const z of ambient) clearWaterFx(z)
+    }
   }
 
+  spawnTerentyev()
   refreshUi()
   return {
     update,

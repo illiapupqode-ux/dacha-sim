@@ -1,9 +1,43 @@
 import * as THREE from 'three'
+import {
+  PLOT_W,
+  PLOT_D,
+  PLOT_Z0,
+  SIDE_PLOT_W,
+  SIDE_GAP_HALF,
+  SIDE_GAP_Z,
+  SIDE_HOUSE,
+  FATHER_HOUSE,
+  TERENTYEV_HOUSE,
+  TERENTYEV_BEDS,
+  SPLIT_PLOT_W,
+  FAR_PLOT_W,
+  GATE_HALF,
+  ZOMBIE_FENCE_SCALE,
+  plotFrontZ,
+  plotBackZ,
+  sideLeftX,
+  sideRightX,
+  sideCenterX,
+  splitLeftX,
+  splitRightX,
+  splitCenterX,
+  zombieBackZ,
+  zombieFrontZ,
+  zombieCenterZ,
+  zombieDepth,
+  fatherCenterZ,
+  fatherDepth,
+  fatherFrontZ,
+  fatherBackZ,
+  farLeftX,
+  farRightX,
+  farCenterX,
+  yardsRightX,
+  insideAnyYard,
+} from './collision.js'
 
-// rectangular plot: width (X) × depth (Z)
-const PLOT_W = 20
-const PLOT_D = 32
-const FOREST = 80
+const FOREST = 110
 
 function makeMat(color, flat = true) {
   return new THREE.MeshLambertMaterial({ color, flatShading: flat })
@@ -208,8 +242,8 @@ function buildHouse(scene) {
   const house = new THREE.Group()
   house.position.set(0, 0, -5)
 
-  const W = 7.2
-  const D = 5.6 * 1.2
+  const W = 7.2 * 1.1
+  const D = 5.6 * 1.2 * 1.1
   const socleH = 1.05
   const brickH = 2.4
   const woodH = 2.4 // 2F story height (= 1F), attic is separate above
@@ -521,10 +555,22 @@ function buildFence(scene) {
   const postMat = makeMat(0x5c4030)
   const wireMat = makeMat(0x6b6358)
   const halfW = PLOT_W / 2
-  const halfD = PLOT_D / 2
+  const olekL = sideLeftX()
+  const olekR = sideRightX()
+  const olekMid = sideCenterX()
+  const splitL = splitLeftX()
+  const splitR = splitRightX()
+  const farL = farLeftX()
+  const farR = farRightX()
+  const farMid = farCenterX()
+  const frontZ = plotFrontZ()
+  const backZ = plotBackZ()
+  const divZ = zombieBackZ()
   const postH = 1.35 * 1.5
   const step = 2.2
-  const gateHalf = 1.8
+  const gateHalf = GATE_HALF
+  const gapHalf = SIDE_GAP_HALF
+  const gapZ = SIDE_GAP_Z
   const wireYs = [0.3, 0.65, 1.0, 1.35, 1.7]
 
   const addPost = (x, z) => {
@@ -570,17 +616,28 @@ function buildFence(scene) {
     }
   }
 
-  // posts along perimeter
+  // Wire yards — zombie paddock is a separate sealed board fence
   const edges = [
-    // front (+Z) with gate gap
-    { axis: 'x', z: halfD, from: -halfW, to: -gateHalf },
-    { axis: 'x', z: halfD, from: gateHalf, to: halfW },
-    // back (−Z)
-    { axis: 'x', z: -halfD, from: -halfW, to: halfW },
-    // left (−X)
-    { axis: 'z', x: -halfW, from: -halfD, to: halfD },
-    // right (+X)
-    { axis: 'z', x: halfW, from: -halfD, to: halfD },
+    { axis: 'x', z: frontZ, from: -halfW, to: -gateHalf },
+    { axis: 'x', z: frontZ, from: gateHalf, to: halfW },
+    { axis: 'x', z: backZ, from: -halfW, to: halfW },
+    { axis: 'z', x: -halfW, from: backZ, to: frontZ },
+    { axis: 'z', x: olekL, from: backZ, to: gapZ - gapHalf },
+    { axis: 'z', x: olekL, from: gapZ + gapHalf, to: frontZ },
+    { axis: 'x', z: frontZ, from: olekL, to: olekMid - gateHalf },
+    { axis: 'x', z: frontZ, from: olekMid + gateHalf, to: olekR },
+    { axis: 'x', z: backZ, from: olekL, to: olekR },
+    // oleksandra ↔ father only (stops at zombie divider)
+    { axis: 'z', x: splitL, from: backZ, to: gapZ - gapHalf },
+    { axis: 'z', x: splitL, from: gapZ + gapHalf, to: divZ },
+    { axis: 'x', z: backZ, from: splitL, to: splitR },
+    // father ↔ far only (stops at zombie divider)
+    { axis: 'z', x: farL, from: backZ, to: gapZ - gapHalf },
+    { axis: 'z', x: farL, from: gapZ + gapHalf, to: divZ },
+    { axis: 'x', z: frontZ, from: farL, to: farMid - gateHalf },
+    { axis: 'x', z: frontZ, from: farMid + gateHalf, to: farR },
+    { axis: 'x', z: backZ, from: farL, to: farR },
+    { axis: 'z', x: farR, from: backZ, to: frontZ },
   ]
 
   for (const e of edges) {
@@ -598,12 +655,90 @@ function buildFence(scene) {
       addMeshPanel(e.x, e.from, e.x, e.to)
     }
   }
-  // gate posts
-  addPost(-gateHalf, halfD)
-  addPost(gateHalf, halfD)
 
+  addPost(-gateHalf, frontZ)
+  addPost(gateHalf, frontZ)
+  addPost(olekMid - gateHalf, frontZ)
+  addPost(olekMid + gateHalf, frontZ)
+  addPost(farMid - gateHalf, frontZ)
+  addPost(farMid + gateHalf, frontZ)
+  addPost(olekL, gapZ - gapHalf)
+  addPost(olekL, gapZ + gapHalf)
+  addPost(splitL, gapZ - gapHalf)
+  addPost(splitL, gapZ + gapHalf)
+  addPost(farL, gapZ - gapHalf)
+  addPost(farL, gapZ + gapHalf)
+
+  buildZombieBoardFence(fence)
   scene.add(fence)
   return fence
+}
+
+/** Sealed dark horizontal-board fence around ділянка зомбі (+30% height). */
+function buildZombieBoardFence(parent) {
+  const x0 = splitLeftX()
+  const x1 = splitRightX()
+  const z0 = zombieBackZ()
+  const z1 = zombieFrontZ()
+  const baseH = 1.35 * 1.5
+  const postH = baseH * ZOMBIE_FENCE_SCALE
+  const step = 2.0
+  const postMat = makeMat(0x1a1410)
+  const boardMat = makeMat(0x2a221c)
+  const boardDark = makeMat(0x16120e)
+
+  const addPost = (x, z) => {
+    const post = new THREE.Mesh(
+      new THREE.BoxGeometry(0.14, postH, 0.14),
+      postMat,
+    )
+    post.position.set(x, postH / 2, z)
+    post.castShadow = true
+    parent.add(post)
+  }
+
+  const addBoardRun = (x0a, z0a, x1a, z1a) => {
+    const dx = x1a - x0a
+    const dz = z1a - z0a
+    const len = Math.hypot(dx, dz)
+    if (len < 0.15) return
+    const midX = (x0a + x1a) / 2
+    const midZ = (z0a + z1a) / 2
+    const ang = Math.atan2(dx, dz)
+    const boardH = 0.16
+    const gap = 0.05
+    const n = Math.max(4, Math.floor((postH - 0.2) / (boardH + gap)))
+    for (let i = 0; i < n; i++) {
+      const y = 0.18 + i * (boardH + gap) + boardH / 2
+      if (y + boardH / 2 > postH - 0.08) break
+      const board = new THREE.Mesh(
+        new THREE.BoxGeometry(0.06, boardH, len + 0.04),
+        i % 2 ? boardDark : boardMat,
+      )
+      board.position.set(midX, y, midZ)
+      board.rotation.y = ang
+      board.castShadow = true
+      board.receiveShadow = true
+      parent.add(board)
+    }
+  }
+
+  const edges = [
+    { axis: 'x', z: z1, from: x0, to: x1 },
+    { axis: 'x', z: z0, from: x0, to: x1 },
+    { axis: 'z', x: x0, from: z0, to: z1 },
+    { axis: 'z', x: x1, from: z0, to: z1 },
+  ]
+
+  for (const e of edges) {
+    if (e.axis === 'x') {
+      for (let x = e.from; x <= e.to + 0.01; x += step) addPost(Math.min(x, e.to), e.z)
+      addBoardRun(e.from, e.z, e.to, e.z)
+    } else {
+      for (let z = e.from; z <= e.to + 0.01; z += step) addPost(e.x, Math.min(z, e.to))
+      addBoardRun(e.x, e.from, e.x, e.to)
+    }
+  }
 }
 
 function buildBoardPile(scene) {
@@ -722,13 +857,6 @@ function makeBareTree() {
   return tree
 }
 
-function insidePlot(x, z, margin = 2) {
-  return (
-    Math.abs(x) < PLOT_W / 2 + margin &&
-    Math.abs(z) < PLOT_D / 2 + margin
-  )
-}
-
 function buildForest(scene) {
   const forest = new THREE.Group()
   const rng = (n) => {
@@ -737,7 +865,7 @@ function buildForest(scene) {
   }
 
   const place = (x, z, i) => {
-    if (insidePlot(x, z, 2.5)) return
+    if (insideAnyYard(x, z, -2.5)) return
     const tree = makeEvergreen()
     const s = 0.85 + rng(i + 90) * 0.85
     tree.scale.setScalar(s)
@@ -746,16 +874,22 @@ function buildForest(scene) {
     forest.add(tree)
   }
 
-  // dense belt just outside the plot
+  const rightEdge = yardsRightX()
+  // dense belt just outside all yards
   let n = 0
   const nearGap = 3.2
-  for (let x = -PLOT_W / 2 - 14; x <= PLOT_W / 2 + 14; x += nearGap) {
-    for (const z of [-PLOT_D / 2 - 4, -PLOT_D / 2 - 8, PLOT_D / 2 + 4, PLOT_D / 2 + 8]) {
+  for (let x = -PLOT_W / 2 - 14; x <= rightEdge + 14; x += nearGap) {
+    for (const z of [plotBackZ() - 4, plotBackZ() - 8, plotFrontZ() + 4, plotFrontZ() + 8]) {
       place(x + (rng(n) - 0.5) * 2, z + (rng(n + 1) - 0.5) * 2, n++)
     }
   }
-  for (let z = -PLOT_D / 2 - 14; z <= PLOT_D / 2 + 14; z += nearGap) {
-    for (const x of [-PLOT_W / 2 - 4, -PLOT_W / 2 - 8, PLOT_W / 2 + 4, PLOT_W / 2 + 8]) {
+  for (let z = plotBackZ() - 14; z <= plotFrontZ() + 14; z += nearGap) {
+    for (const x of [
+      -PLOT_W / 2 - 4,
+      -PLOT_W / 2 - 8,
+      rightEdge + 4,
+      rightEdge + 8,
+    ]) {
       place(x + (rng(n) - 0.5) * 2, z + (rng(n + 1) - 0.5) * 2, n++)
     }
   }
@@ -789,7 +923,8 @@ function buildForest(scene) {
 function buildBareTreeNearPlot(scene) {
   const tree = makeBareTree()
   // further back, near the rear-right plot corner
-  tree.position.set(8.4, 0, -12.5)
+  // further back into the extended rear yard
+  tree.position.set(8.4, 0, -16.5)
   tree.scale.setScalar(1.25)
   scene.add(tree)
   return tree
@@ -810,19 +945,40 @@ function buildGround(scene) {
     makeMat(0x5f8a45, false),
   )
   grass.rotation.x = -Math.PI / 2
+  grass.position.set(0, 0.002, PLOT_Z0)
   grass.receiveShadow = true
   scene.add(grass)
 
-  // darker soil strip under fence — reads as rectangular lot edge
+  const grassMat = makeMat(0x5f8a45, false)
+  const rimMat = makeMat(0x6a5a3e, false)
+  const addYardPad = (w, d, cx, cz, yGrass = 0.002) => {
+    const g = new THREE.Mesh(new THREE.PlaneGeometry(w, d), grassMat)
+    g.rotation.x = -Math.PI / 2
+    g.position.set(cx, yGrass, cz)
+    g.receiveShadow = true
+    scene.add(g)
+    const r = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.6, d + 0.6), rimMat)
+    r.rotation.x = -Math.PI / 2
+    r.position.set(cx, -0.005, cz)
+    r.receiveShadow = true
+    scene.add(r)
+  }
+
+  // oleksandra + zombie + father + far (my grass already above)
+  addYardPad(SIDE_PLOT_W, PLOT_D, sideCenterX(), PLOT_Z0)
+  addYardPad(SPLIT_PLOT_W, zombieDepth(), splitCenterX(), zombieCenterZ())
+  addYardPad(SPLIT_PLOT_W, fatherDepth(), splitCenterX(), fatherCenterZ())
+  addYardPad(FAR_PLOT_W, PLOT_D, farCenterX(), PLOT_Z0)
+
+  // darker soil strip under my fence
   const rim = new THREE.Mesh(
     new THREE.PlaneGeometry(PLOT_W + 0.6, PLOT_D + 0.6),
-    makeMat(0x6a5a3e, false),
+    rimMat,
   )
   rim.rotation.x = -Math.PI / 2
-  rim.position.y = -0.005
+  rim.position.set(0, -0.005, PLOT_Z0)
   rim.receiveShadow = true
   scene.add(rim)
-  grass.position.y = 0.002
 
   // path from gate toward house, then to right-wall door
   const path = new THREE.Mesh(
@@ -847,7 +1003,7 @@ function buildGround(scene) {
 
 function buildMotorcycle(scene) {
   const bike = new THREE.Group()
-  bike.position.set(-PLOT_W / 2 + 2.4, 0, PLOT_D / 2 - 3.0)
+  bike.position.set(-PLOT_W / 2 + 2.4, 0, plotFrontZ() - 3.0)
   bike.rotation.y = 0.55
 
   const red = makeMat(0xb71c1c)
@@ -935,9 +1091,706 @@ function buildMotorcycle(scene) {
   return bike
 }
 
+/**
+ * Tiny one-story green wooden cottage on stilts — middle of the side yard.
+ * Door on the back (−Z); windows on the other three sides; night glow via mats/lights.
+ */
+function buildSideCottage(scene) {
+  const cottage = new THREE.Group()
+  cottage.position.set(SIDE_HOUSE.x, 0, SIDE_HOUSE.z)
+
+  const W = SIDE_HOUSE.halfW * 2
+  const D = SIDE_HOUSE.halfD * 2
+  const stiltH = 0.55
+  const wallH = 2.05
+  const floorY = stiltH
+  const roofRise = 0.75
+  const green = 0x3f6e3a
+  const greenDark = 0x2f522c
+  const wood = 0x5a3d28
+  const woodDark = 0x3b2416
+  const frame = 0xe8e6e0
+
+  // stilts instead of socle
+  const inset = 0.22
+  const postPositions = [
+    [-W / 2 + inset, -D / 2 + inset],
+    [W / 2 - inset, -D / 2 + inset],
+    [-W / 2 + inset, D / 2 - inset],
+    [W / 2 - inset, D / 2 - inset],
+    [0, -D / 2 + inset],
+    [0, D / 2 - inset],
+  ]
+  for (const [px, pz] of postPositions) {
+    addBox(cottage, 0.12, stiltH, 0.12, wood, px, stiltH / 2, pz)
+  }
+
+  // floor deck
+  addBox(cottage, W + 0.08, 0.1, D + 0.08, woodDark, 0, floorY, 0)
+
+  // walls
+  addBox(cottage, W, wallH, D, green, 0, floorY + wallH / 2, 0)
+  // board courses
+  for (let i = 0; i < 5; i++) {
+    const y = floorY + 0.22 + i * 0.38
+    addBox(cottage, W + 0.02, 0.05, 0.04, greenDark, 0, y, D / 2 + 0.03)
+    addBox(cottage, W + 0.02, 0.05, 0.04, greenDark, 0, y, -D / 2 - 0.03)
+    addBox(cottage, 0.04, 0.05, D + 0.02, greenDark, W / 2 + 0.03, y, 0)
+    addBox(cottage, 0.04, 0.05, D + 0.02, greenDark, -W / 2 - 0.03, y, 0)
+  }
+
+  // door on back (−Z)
+  const doorW = 0.72
+  const doorH = 1.55
+  addBox(cottage, doorW, doorH, 0.08, woodDark, 0, floorY + doorH / 2, -D / 2 - 0.04)
+  addBox(cottage, 0.06, 0.06, 0.04, 0xc9a227, doorW * 0.28, floorY + doorH * 0.5, -D / 2 - 0.09)
+  // short steps up to the stilts
+  addBox(cottage, doorW + 0.25, 0.12, 0.35, wood, 0, 0.06, -D / 2 - 0.45)
+  addBox(cottage, doorW + 0.15, 0.12, 0.32, wood, 0, 0.18, -D / 2 - 0.28)
+  addBox(cottage, doorW + 0.08, 0.12, 0.28, wood, 0, 0.3, -D / 2 - 0.14)
+
+  // simple gable roof
+  const roofMat = makeMat(0x6a5a3e)
+  roofMat.side = THREE.DoubleSide
+  const overhang = 0.28
+  const ridgeY = floorY + wallH + roofRise
+  const eaveY = floorY + wallH + 0.05
+  const xL = -W / 2 - overhang
+  const xR = W / 2 + overhang
+  const zF = D / 2 + overhang
+  const zB = -D / 2 - overhang
+  addRoofQuad(
+    cottage,
+    roofMat,
+    xL, eaveY, zF,
+    0, ridgeY, zF,
+    0, ridgeY, zB,
+    xL, eaveY, zB,
+  )
+  addRoofQuad(
+    cottage,
+    roofMat,
+    0, ridgeY, zF,
+    xR, eaveY, zF,
+    xR, eaveY, zB,
+    0, ridgeY, zB,
+  )
+  // sheathe attic gables (front + back)
+  const gableShape = new THREE.Shape()
+  gableShape.moveTo(-W / 2 + 0.02, 0.02)
+  gableShape.lineTo(0, roofRise - 0.04)
+  gableShape.lineTo(W / 2 - 0.02, 0.02)
+  gableShape.closePath()
+  const gableGeo = new THREE.ShapeGeometry(gableShape)
+  const gableMat = makeMat(green)
+  gableMat.side = THREE.DoubleSide
+  const gableF = new THREE.Mesh(gableGeo, gableMat)
+  gableF.position.set(0, floorY + wallH, D / 2 + 0.02)
+  gableF.castShadow = true
+  gableF.receiveShadow = true
+  cottage.add(gableF)
+  const gableB = new THREE.Mesh(gableGeo, gableMat)
+  gableB.position.set(0, floorY + wallH, -D / 2 - 0.02)
+  gableB.rotation.y = Math.PI
+  gableB.castShadow = true
+  gableB.receiveShadow = true
+  cottage.add(gableB)
+  // board lines on gables
+  for (const gz of [D / 2 + 0.04, -D / 2 - 0.04]) {
+    addBox(cottage, W * 0.55, 0.04, 0.03, greenDark, 0, floorY + wallH + roofRise * 0.28, gz)
+    addBox(cottage, W * 0.28, 0.04, 0.03, greenDark, 0, floorY + wallH + roofRise * 0.52, gz)
+  }
+
+  const windowMats = []
+  const windowLights = []
+  const addGlass = (w, h, d, x, y, z) => {
+    const mat = new THREE.MeshLambertMaterial({
+      color: 0x9eb8c8,
+      emissive: 0xffb300,
+      emissiveIntensity: 0,
+      flatShading: true,
+    })
+    windowMats.push(mat)
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
+    mesh.position.set(x, y, z)
+    mesh.userData.isWindow = true
+    mesh.castShadow = false
+    mesh.receiveShadow = false
+    cottage.add(mesh)
+    return mesh
+  }
+  const addWindowLight = (x, y, z, ox, oy, oz) => {
+    const light = new THREE.SpotLight(0xffc078, 0, 12, Math.PI / 2.6, 0.45, 1.35)
+    const sx = Math.sign(ox) || 0
+    const sz = Math.sign(oz) || 0
+    light.position.set(x + ox * 0.12, y, z + oz * 0.12)
+    light.target.position.set(x + sx * 3 + ox, y - 0.8, z + sz * 3 + oz)
+    light.castShadow = true
+    light.shadow.mapSize.set(256, 256)
+    light.shadow.camera.near = 0.3
+    light.shadow.camera.far = 14
+    light.shadow.bias = -0.0008
+    light.shadow.normalBias = 0.04
+    cottage.add(light)
+    cottage.add(light.target)
+    windowLights.push(light)
+    return light
+  }
+
+  const winY = floorY + wallH * 0.55
+  const ww = 0.55
+  const wh = 0.7
+
+  // front (+Z)
+  addBox(cottage, ww + 0.1, wh + 0.1, 0.08, frame, 0, winY, D / 2 + 0.04)
+  addGlass(ww * 0.42, wh * 0.42, 0.05, -ww * 0.22, winY + wh * 0.18, D / 2 + 0.08)
+  addGlass(ww * 0.42, wh * 0.42, 0.05, ww * 0.22, winY + wh * 0.18, D / 2 + 0.08)
+  addGlass(ww * 0.42, wh * 0.42, 0.05, -ww * 0.22, winY - wh * 0.18, D / 2 + 0.08)
+  addGlass(ww * 0.42, wh * 0.42, 0.05, ww * 0.22, winY - wh * 0.18, D / 2 + 0.08)
+  addBox(cottage, 0.04, wh, 0.04, frame, 0, winY, D / 2 + 0.09)
+  addBox(cottage, ww, 0.04, 0.04, frame, 0, winY, D / 2 + 0.09)
+  addWindowLight(0, winY, D / 2, 0, 0, 1)
+
+  // right (+X)
+  addBox(cottage, 0.08, wh + 0.1, ww + 0.1, frame, W / 2 + 0.04, winY, 0.15)
+  addGlass(0.05, wh * 0.42, ww * 0.42, W / 2 + 0.08, winY + wh * 0.18, 0.15 - ww * 0.22)
+  addGlass(0.05, wh * 0.42, ww * 0.42, W / 2 + 0.08, winY + wh * 0.18, 0.15 + ww * 0.22)
+  addGlass(0.05, wh * 0.42, ww * 0.42, W / 2 + 0.08, winY - wh * 0.18, 0.15 - ww * 0.22)
+  addGlass(0.05, wh * 0.42, ww * 0.42, W / 2 + 0.08, winY - wh * 0.18, 0.15 + ww * 0.22)
+  addBox(cottage, 0.04, wh, 0.04, frame, W / 2 + 0.09, winY, 0.15)
+  addBox(cottage, 0.04, 0.04, ww, frame, W / 2 + 0.09, winY, 0.15)
+  addWindowLight(W / 2, winY, 0.15, 1, 0, 0)
+
+  // left (−X)
+  addBox(cottage, 0.08, wh + 0.1, ww + 0.1, frame, -W / 2 - 0.04, winY, 0.15)
+  addGlass(0.05, wh * 0.42, ww * 0.42, -W / 2 - 0.08, winY + wh * 0.18, 0.15 - ww * 0.22)
+  addGlass(0.05, wh * 0.42, ww * 0.42, -W / 2 - 0.08, winY + wh * 0.18, 0.15 + ww * 0.22)
+  addGlass(0.05, wh * 0.42, ww * 0.42, -W / 2 - 0.08, winY - wh * 0.18, 0.15 - ww * 0.22)
+  addGlass(0.05, wh * 0.42, ww * 0.42, -W / 2 - 0.08, winY - wh * 0.18, 0.15 + ww * 0.22)
+  addBox(cottage, 0.04, wh, 0.04, frame, -W / 2 - 0.09, winY, 0.15)
+  addBox(cottage, 0.04, 0.04, ww, frame, -W / 2 - 0.09, winY, 0.15)
+  addWindowLight(-W / 2, winY, 0.15, -1, 0, 0)
+
+  scene.add(cottage)
+  return { cottage, windowMats, windowLights }
+}
+
+/**
+ * Father's one-story white house on stilts — along fence with Oleksandra.
+ * Length 1.5× my house; door on +X; steep gable.
+ */
+function buildFatherHouse(scene) {
+  const house = new THREE.Group()
+  house.position.set(FATHER_HOUSE.x, 0, FATHER_HOUSE.z)
+
+  const W = FATHER_HOUSE.halfW * 2
+  const D = FATHER_HOUSE.halfD * 2
+  const stiltH = 0.62
+  const wallH = 2.35
+  const floorY = stiltH
+  const roofRise = 1.85
+  const roofRiseTall = roofRise * 1.05
+  const white = 0xf2f0ea
+  const whiteTrim = 0xd8d4cc
+  const lightBlue = 0x5b9fd4
+  const blueTrim = 0x3d7eb0
+  const wood = 0x5a3d28
+  const woodDark = 0x3b2416
+  const frame = 0x6a6860
+  // door sits near +Z; far half (−Z) is light blue + taller roof
+  const midZ = 0
+  const halfD = D / 2
+
+  // stilts along the long footprint
+  const inset = 0.28
+  const postXs = [-W / 2 + inset, 0, W / 2 - inset]
+  const postZs = []
+  const zStep = 2.4
+  for (let z = -D / 2 + inset; z <= D / 2 - inset + 0.01; z += zStep) {
+    postZs.push(Math.min(z, D / 2 - inset))
+  }
+  if (postZs[postZs.length - 1] < D / 2 - inset - 0.05) postZs.push(D / 2 - inset)
+  for (const px of postXs) {
+    for (const pz of postZs) {
+      addBox(house, 0.14, stiltH, 0.14, wood, px, stiltH / 2, pz)
+    }
+  }
+
+  addBox(house, W + 0.1, 0.12, D + 0.1, woodDark, 0, floorY, 0)
+  // door half (white) + far half (light blue)
+  addBox(house, W, wallH, halfD, white, 0, floorY + wallH / 2, halfD / 2)
+  addBox(house, W, wallH, halfD, lightBlue, 0, floorY + wallH / 2, -halfD / 2)
+
+  // trim courses per half
+  for (let i = 0; i < 4; i++) {
+    const y = floorY + 0.35 + i * 0.5
+    addBox(house, W + 0.02, 0.04, 0.04, whiteTrim, 0, y, D / 2 + 0.03)
+    addBox(house, W + 0.02, 0.04, 0.04, blueTrim, 0, y, -D / 2 - 0.03)
+    addBox(house, 0.04, 0.04, halfD + 0.02, whiteTrim, W / 2 + 0.03, y, halfD / 2)
+    addBox(house, 0.04, 0.04, halfD + 0.02, whiteTrim, -W / 2 - 0.03, y, halfD / 2)
+    addBox(house, 0.04, 0.04, halfD + 0.02, blueTrim, W / 2 + 0.03, y, -halfD / 2)
+    addBox(house, 0.04, 0.04, halfD + 0.02, blueTrim, -W / 2 - 0.03, y, -halfD / 2)
+  }
+
+  // door on +X (into father plot), opposite Oleksandra
+  const doorW = 0.95
+  const doorH = 1.85
+  const doorZ = FATHER_HOUSE.doorLocalZ
+  addBox(house, 0.08, doorH, doorW, woodDark, W / 2 + 0.04, floorY + doorH / 2, doorZ)
+  addBox(house, 0.04, 0.06, 0.06, 0xc9a227, W / 2 + 0.1, floorY + doorH * 0.52, doorZ + doorW * 0.28)
+  addBox(house, 0.4, 0.12, doorW + 0.3, wood, W / 2 + 0.55, 0.06, doorZ)
+  addBox(house, 0.36, 0.12, doorW + 0.2, wood, W / 2 + 0.38, 0.2, doorZ)
+  addBox(house, 0.3, 0.12, doorW + 0.12, wood, W / 2 + 0.22, 0.34, doorZ)
+
+  // gable roof: far (−Z) half 5% taller
+  const roofMat = makeMat(0x6a5a3e)
+  roofMat.side = THREE.DoubleSide
+  const overhang = 0.28
+  const ridgeY = floorY + wallH + roofRise
+  const ridgeYTall = floorY + wallH + roofRiseTall
+  const eaveY = floorY + wallH + 0.06
+  const xL = -W / 2 - overhang
+  const xR = W / 2 + overhang
+  const zF = D / 2 + overhang
+  const zB = -D / 2 - overhang
+  // white / door half
+  addRoofQuad(house, roofMat, xL, eaveY, zF, 0, ridgeY, zF, 0, ridgeY, midZ, xL, eaveY, midZ)
+  addRoofQuad(house, roofMat, 0, ridgeY, zF, xR, eaveY, zF, xR, eaveY, midZ, 0, ridgeY, midZ)
+  // light-blue half — +5% roof
+  addRoofQuad(house, roofMat, xL, eaveY, midZ, 0, ridgeYTall, midZ, 0, ridgeYTall, zB, xL, eaveY, zB)
+  addRoofQuad(house, roofMat, 0, ridgeYTall, midZ, xR, eaveY, midZ, xR, eaveY, zB, 0, ridgeYTall, zB)
+
+  const makeGable = (rise, color, z, flip) => {
+    const shape = new THREE.Shape()
+    shape.moveTo(-W / 2 + 0.02, 0.02)
+    shape.lineTo(0, rise - 0.05)
+    shape.lineTo(W / 2 - 0.02, 0.02)
+    shape.closePath()
+    const geo = new THREE.ShapeGeometry(shape)
+    const mat = makeMat(color)
+    mat.side = THREE.DoubleSide
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.position.set(0, floorY + wallH, z)
+    if (flip) mesh.rotation.y = Math.PI
+    mesh.castShadow = true
+    house.add(mesh)
+  }
+  makeGable(roofRise, white, D / 2 + 0.02, false)
+  makeGable(roofRiseTall, lightBlue, -D / 2 - 0.02, true)
+
+  const windowMats = []
+  const windowLights = []
+  const addGlass = (w, h, d, x, y, z) => {
+    const mat = new THREE.MeshLambertMaterial({
+      color: 0x9eb8c8,
+      emissive: 0xffb300,
+      emissiveIntensity: 0,
+      flatShading: true,
+    })
+    windowMats.push(mat)
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
+    mesh.position.set(x, y, z)
+    mesh.userData.isWindow = true
+    mesh.castShadow = false
+    mesh.receiveShadow = false
+    house.add(mesh)
+    return mesh
+  }
+  const addWindowLight = (x, y, z, ox, oy, oz) => {
+    const light = new THREE.SpotLight(0xffc078, 0, 14, Math.PI / 2.6, 0.45, 1.3)
+    const sx = Math.sign(ox) || 0
+    const sz = Math.sign(oz) || 0
+    light.position.set(x + ox * 0.12, y, z + oz * 0.12)
+    light.target.position.set(x + sx * 3.5 + ox, y - 0.9, z + sz * 3.5 + oz)
+    light.castShadow = true
+    light.shadow.mapSize.set(256, 256)
+    house.add(light)
+    house.add(light.target)
+    windowLights.push(light)
+  }
+
+  const winY = floorY + wallH * 0.55
+  const ww = 0.7
+  const wh = 0.85
+  const placeWinZ = (localZ, faceX) => {
+    const x = faceX < 0 ? -W / 2 - 0.04 : W / 2 + 0.04
+    addBox(house, 0.08, wh + 0.1, ww + 0.1, frame, x, winY, localZ)
+    addGlass(0.05, wh * 0.4, ww * 0.4, x + Math.sign(faceX) * 0.05, winY + wh * 0.18, localZ - ww * 0.2)
+    addGlass(0.05, wh * 0.4, ww * 0.4, x + Math.sign(faceX) * 0.05, winY + wh * 0.18, localZ + ww * 0.2)
+    addGlass(0.05, wh * 0.4, ww * 0.4, x + Math.sign(faceX) * 0.05, winY - wh * 0.18, localZ - ww * 0.2)
+    addGlass(0.05, wh * 0.4, ww * 0.4, x + Math.sign(faceX) * 0.05, winY - wh * 0.18, localZ + ww * 0.2)
+    addWindowLight(x, winY, localZ, Math.sign(faceX), 0, 0)
+  }
+
+  // door side (+X): window near door + one on far half
+  placeWinZ(doorZ - 1.7, 1)
+  placeWinZ(-D * 0.28, 1)
+  // Oleksandra side (−X)
+  placeWinZ(-D * 0.28, -1)
+  placeWinZ(D * 0.12, -1)
+  // end windows (±Z)
+  addBox(house, ww + 0.1, wh + 0.1, 0.08, frame, 0, winY, D / 2 + 0.04)
+  addGlass(ww * 0.4, wh * 0.4, 0.05, -ww * 0.2, winY + wh * 0.18, D / 2 + 0.08)
+  addGlass(ww * 0.4, wh * 0.4, 0.05, ww * 0.2, winY + wh * 0.18, D / 2 + 0.08)
+  addGlass(ww * 0.4, wh * 0.4, 0.05, -ww * 0.2, winY - wh * 0.18, D / 2 + 0.08)
+  addGlass(ww * 0.4, wh * 0.4, 0.05, ww * 0.2, winY - wh * 0.18, D / 2 + 0.08)
+  addWindowLight(0, winY, D / 2, 0, 0, 1)
+
+  addBox(house, ww + 0.1, wh + 0.1, 0.08, frame, 0, winY, -D / 2 - 0.04)
+  addGlass(ww * 0.4, wh * 0.4, 0.05, -ww * 0.2, winY + wh * 0.18, -D / 2 - 0.08)
+  addGlass(ww * 0.4, wh * 0.4, 0.05, ww * 0.2, winY + wh * 0.18, -D / 2 - 0.08)
+  addGlass(ww * 0.4, wh * 0.4, 0.05, -ww * 0.2, winY - wh * 0.18, -D / 2 - 0.08)
+  addGlass(ww * 0.4, wh * 0.4, 0.05, ww * 0.2, winY - wh * 0.18, -D / 2 - 0.08)
+  addWindowLight(0, winY, -D / 2, 0, 0, -1)
+
+  scene.add(house)
+  return { house, windowMats, windowLights }
+}
+
+/** Apple tree — short trunk, round leafy crown, red apples. */
+function makeAppleTree(seed = 1) {
+  const tree = new THREE.Group()
+  const bark = makeMat(0x6b4e32)
+  const leaf = makeMat(0x4a8f3c)
+  const leaf2 = makeMat(0x3d7a32)
+  const apple = makeMat(0xd32f2f)
+  const apple2 = makeMat(0xc62828)
+
+  const trunkH = 1.55 + (seed % 3) * 0.12
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.16, trunkH, 6),
+    bark,
+  )
+  trunk.position.y = trunkH / 2
+  trunk.castShadow = true
+  tree.add(trunk)
+
+  // main crown blobs
+  const crownY = trunkH + 0.55
+  const blobs = [
+    [0, crownY, 0, 1.15],
+    [-0.55, crownY - 0.1, 0.25, 0.75],
+    [0.5, crownY + 0.05, -0.2, 0.7],
+    [0.15, crownY + 0.45, 0.35, 0.65],
+    [-0.25, crownY + 0.35, -0.4, 0.6],
+  ]
+  blobs.forEach(([x, y, z, r], i) => {
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(r, 6, 5),
+      i % 2 ? leaf : leaf2,
+    )
+    mesh.position.set(x, y, z)
+    mesh.scale.set(1.05, 0.85, 1.0)
+    mesh.castShadow = true
+    tree.add(mesh)
+  })
+
+  // apples
+  const fruit = [
+    [0.55, crownY - 0.25, 0.2],
+    [-0.45, crownY - 0.15, -0.15],
+    [0.2, crownY + 0.15, 0.55],
+    [-0.15, crownY - 0.35, 0.4],
+    [0.35, crownY + 0.2, -0.45],
+    [-0.55, crownY + 0.05, 0.35],
+    [0.05, crownY - 0.45, -0.3],
+  ]
+  fruit.forEach(([x, y, z], i) => {
+    if ((seed + i) % 4 === 0) return
+    const a = new THREE.Mesh(
+      new THREE.SphereGeometry(0.09, 5, 4),
+      i % 2 ? apple : apple2,
+    )
+    a.position.set(x, y, z)
+    a.castShadow = true
+    tree.add(a)
+  })
+
+  return tree
+}
+
+/** Scattered apple trees across father's plot (no underlay soil). */
+function buildFatherGarden(scene) {
+  const orchard = new THREE.Group()
+  const x0 = splitLeftX() + 2.2
+  const x1 = splitRightX() - 2.0
+  const z0 = fatherBackZ() + 2.5
+  const z1 = fatherFrontZ() - 2.0
+
+  const spots = [
+    [0.18, 0.12], [0.42, 0.2], [0.68, 0.14],
+    [0.28, 0.38], [0.55, 0.42], [0.78, 0.35],
+    [0.15, 0.58], [0.48, 0.62], [0.72, 0.55],
+    [0.32, 0.78], [0.6, 0.82], [0.82, 0.72],
+  ]
+
+  spots.forEach(([u, v], i) => {
+    const x = x0 + u * (x1 - x0)
+    const z = z0 + v * (z1 - z0)
+    // keep clear of father's house footprint
+    if (
+      Math.abs(x - FATHER_HOUSE.x) < FATHER_HOUSE.halfW + 1.6 &&
+      Math.abs(z - FATHER_HOUSE.z) < FATHER_HOUSE.halfD + 1.4
+    ) {
+      return
+    }
+    const tree = makeAppleTree(i + 2)
+    tree.scale.setScalar(0.9 + (i % 3) * 0.08)
+    tree.position.set(x, 0, z)
+    tree.rotation.y = i * 1.1
+    orchard.add(tree)
+  })
+
+  scene.add(orchard)
+  return orchard
+}
+
+/** Vegetable beds on Тєрєнтьєв plot (behind the house). */
+function buildTerentyevGarden(scene) {
+  const garden = new THREE.Group()
+  const soil = 0x5c4030
+  const soilDark = 0x3e2a1e
+  const leaf = 0x3d7a3a
+  const leaf2 = 0x2e5c2c
+  const flower = [0xe85d75, 0xf0c05a, 0xc77dff]
+
+  const bedSizes = [
+    { w: 2.8, d: 1.1 },
+    { w: 2.6, d: 1.1 },
+    { w: 2.8, d: 1.1 },
+    { w: 2.6, d: 1.1 },
+    { w: 5.2, d: 1.0 },
+  ]
+
+  TERENTYEV_BEDS.forEach((bed, bi) => {
+    const { w, d } = bedSizes[bi] || { w: 2.6, d: 1.1 }
+    addBox(garden, w, 0.12, d, soil, bed.x, 0.04, bed.z)
+    addBox(garden, w + 0.12, 0.08, 0.08, soilDark, bed.x, 0.08, bed.z - d / 2)
+    addBox(garden, w + 0.12, 0.08, 0.08, soilDark, bed.x, 0.08, bed.z + d / 2)
+    const cols = Math.max(3, Math.floor(w / 0.45))
+    for (let i = 0; i < cols; i++) {
+      const px = bed.x - w / 2 + 0.3 + (i / Math.max(1, cols - 1)) * (w - 0.6)
+      const h = 0.25 + (i % 3) * 0.08
+      addBox(garden, 0.12, h, 0.12, i % 2 ? leaf : leaf2, px, 0.1 + h / 2, bed.z)
+      if (i % 2 === 0) {
+        addBox(garden, 0.1, 0.08, 0.1, flower[i % flower.length], px, 0.12 + h, bed.z)
+      }
+    }
+  })
+
+  const cx = TERENTYEV_HOUSE.x
+  const cz = TERENTYEV_HOUSE.z - TERENTYEV_HOUSE.halfD - 3.2
+  addBox(garden, 1.0, 0.04, 5.8, 0x8a7a55, cx, 0.02, cz + 0.1)
+  addBox(garden, 5.6, 0.04, 0.7, 0x8a7a55, cx, 0.02, cz - 1.05)
+
+  scene.add(garden)
+  return garden
+}
+
+/** Stone statue: woman with an oar — father's garden. */
+function buildWomanWithOarStatue(scene) {
+  const statue = new THREE.Group()
+  const cx = FATHER_HOUSE.x + FATHER_HOUSE.halfW + 4.2
+  const cz = Math.min(FATHER_HOUSE.z + FATHER_HOUSE.halfD + 2.8, fatherFrontZ() - 2.5)
+  statue.position.set(cx, 0, cz)
+  statue.rotation.y = -0.55
+
+  const stone = 0x9a9ea6
+  const stoneDark = 0x6e737c
+  const stoneLight = 0xb8bcc4
+
+  // pedestal
+  addBox(statue, 1.1, 0.22, 1.1, stoneDark, 0, 0.11, 0)
+  addBox(statue, 0.85, 0.55, 0.85, stone, 0, 0.48, 0)
+
+  // legs / skirt
+  addBox(statue, 0.42, 0.85, 0.32, stone, 0, 1.15, 0)
+  addBox(statue, 0.55, 0.55, 0.38, stoneLight, 0, 1.55, 0.02)
+
+  // torso
+  addBox(statue, 0.48, 0.7, 0.28, stone, 0, 2.15, 0)
+  // head
+  addBox(statue, 0.28, 0.34, 0.28, stoneLight, 0, 2.7, 0.02)
+  // hair bun
+  addBox(statue, 0.22, 0.16, 0.22, stoneDark, 0, 2.9, -0.06)
+
+  // arms — left holds oar upright
+  addBox(statue, 0.14, 0.14, 0.55, stone, -0.38, 2.2, 0.15, 0.4, 0, 0)
+  addBox(statue, 0.14, 0.14, 0.5, stone, 0.4, 2.15, 0.05, -0.2, 0, 0)
+
+  // oar
+  const oar = new THREE.Group()
+  oar.position.set(-0.42, 1.6, 0.35)
+  oar.rotation.z = 0.15
+  oar.rotation.x = -0.2
+  addBox(oar, 0.07, 2.4, 0.07, stoneDark, 0, 1.1, 0)
+  addBox(oar, 0.08, 0.55, 0.28, stone, 0, 2.35, 0)
+  addBox(oar, 0.06, 0.12, 0.4, stoneLight, 0, 2.55, 0)
+  statue.add(oar)
+
+  scene.add(statue)
+  return statue
+}
+
+/**
+ * Terentyev one-story house on the street side of his plot:
+ * low brick socle, brick walls, wooden attic.
+ */
+function buildTerentyevHouse(scene) {
+  const house = new THREE.Group()
+  house.position.set(TERENTYEV_HOUSE.x, 0, TERENTYEV_HOUSE.z)
+
+  const W = TERENTYEV_HOUSE.halfW * 2
+  const D = TERENTYEV_HOUSE.halfD * 2
+  const socleH = 0.42
+  const wallH = 2.45
+  const atticH = 1.15
+  const yWall = socleH
+  const yAttic = socleH + wallH
+  const brick = 0xb45a3c
+  const brickDark = 0x8e422c
+  const mortar = 0xc4a090
+  const wood = 0x6b4a32
+  const woodLine = 0x4a3220
+  const socle = 0x8a8d88
+  const roofCol = 0x5a5048
+  const frame = 0xe8e6e0
+
+  // low socle
+  addBox(house, W + 0.25, socleH, D + 0.25, socle, 0, socleH / 2, 0)
+
+  // brick body
+  addBox(house, W, wallH, D, brick, 0, yWall + wallH / 2, 0)
+  for (let i = 0; i < 6; i++) {
+    const y = yWall + 0.28 + i * 0.38
+    addBox(house, W + 0.02, 0.035, 0.04, mortar, 0, y, D / 2 + 0.03)
+    addBox(house, W + 0.02, 0.035, 0.04, mortar, 0, y, -D / 2 - 0.03)
+    addBox(house, 0.04, 0.035, D + 0.02, mortar, W / 2 + 0.03, y, 0)
+    addBox(house, 0.04, 0.035, D + 0.02, mortar, -W / 2 - 0.03, y, 0)
+  }
+  for (let i = 1; i < 5; i++) {
+    addBox(house, 0.04, wallH, 0.04, brickDark, -W / 2 + (W * i) / 5, yWall + wallH / 2, D / 2 + 0.04)
+  }
+
+  // door on street (+Z)
+  const doorW = 1.0
+  const doorH = 2.05
+  addBox(house, doorW, doorH, 0.1, woodLine, 0.15, socleH + doorH / 2, D / 2 + 0.05)
+  addBox(house, 0.06, 0.06, 0.05, 0xc9a227, doorW * 0.28, socleH + doorH * 0.5, D / 2 + 0.12)
+  addBox(house, doorW + 0.35, 0.1, 0.55, socle, 0.15, 0.05, D / 2 + 0.55)
+
+  // wooden attic mass + gable roof
+  addBox(house, W - 0.1, atticH * 0.55, D - 0.1, wood, 0, yAttic + atticH * 0.28, 0)
+  for (let i = 0; i < 3; i++) {
+    const y = yAttic + 0.18 + i * 0.22
+    addBox(house, W - 0.05, 0.04, 0.04, woodLine, 0, y, D / 2 - 0.02)
+    addBox(house, W - 0.05, 0.04, 0.04, woodLine, 0, y, -D / 2 + 0.02)
+  }
+
+  const roofMat = makeMat(roofCol)
+  roofMat.side = THREE.DoubleSide
+  const overhang = 0.32
+  const roofRise = 1.05
+  const ridgeY = yAttic + atticH * 0.45 + roofRise
+  const eaveY = yAttic + atticH * 0.45
+  const xL = -W / 2 - overhang
+  const xR = W / 2 + overhang
+  const zF = D / 2 + overhang
+  const zB = -D / 2 - overhang
+  addRoofQuad(house, roofMat, xL, eaveY, zF, 0, ridgeY, zF, 0, ridgeY, zB, xL, eaveY, zB)
+  addRoofQuad(house, roofMat, 0, ridgeY, zF, xR, eaveY, zF, xR, eaveY, zB, 0, ridgeY, zB)
+
+  const gableShape = new THREE.Shape()
+  gableShape.moveTo(-W / 2 + 0.04, 0.02)
+  gableShape.lineTo(0, roofRise - 0.06)
+  gableShape.lineTo(W / 2 - 0.04, 0.02)
+  gableShape.closePath()
+  const gableGeo = new THREE.ShapeGeometry(gableShape)
+  const gableMat = makeMat(wood)
+  gableMat.side = THREE.DoubleSide
+  for (const [z, flip] of [
+    [D / 2 + 0.02, false],
+    [-D / 2 - 0.02, true],
+  ]) {
+    const g = new THREE.Mesh(gableGeo, gableMat)
+    g.position.set(0, eaveY, z)
+    if (flip) g.rotation.y = Math.PI
+    g.castShadow = true
+    house.add(g)
+  }
+
+  const windowMats = []
+  const windowLights = []
+  const addGlass = (w, h, d, x, y, z) => {
+    const mat = new THREE.MeshLambertMaterial({
+      color: 0x9eb8c8,
+      emissive: 0xffb300,
+      emissiveIntensity: 0,
+      flatShading: true,
+    })
+    windowMats.push(mat)
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
+    mesh.position.set(x, y, z)
+    mesh.userData.isWindow = true
+    house.add(mesh)
+    return mesh
+  }
+  const addWindowLight = (x, y, z, ox, oy, oz) => {
+    const light = new THREE.SpotLight(0xffc078, 0, 14, Math.PI / 2.6, 0.45, 1.3)
+    const sx = Math.sign(ox) || 0
+    const sz = Math.sign(oz) || 0
+    light.position.set(x + ox * 0.12, y, z + oz * 0.12)
+    light.target.position.set(x + sx * 3.5 + ox, y - 0.9, z + sz * 3.5 + oz)
+    house.add(light)
+    house.add(light.target)
+    windowLights.push(light)
+  }
+
+  const winY = yWall + wallH * 0.55
+  const placeFront = (lx) => {
+    const ww = 0.7
+    const wh = 0.9
+    addBox(house, ww + 0.1, wh + 0.1, 0.08, frame, lx, winY, D / 2 + 0.04)
+    addGlass(ww * 0.4, wh * 0.4, 0.05, lx - ww * 0.2, winY + wh * 0.18, D / 2 + 0.08)
+    addGlass(ww * 0.4, wh * 0.4, 0.05, lx + ww * 0.2, winY + wh * 0.18, D / 2 + 0.08)
+    addGlass(ww * 0.4, wh * 0.4, 0.05, lx - ww * 0.2, winY - wh * 0.18, D / 2 + 0.08)
+    addGlass(ww * 0.4, wh * 0.4, 0.05, lx + ww * 0.2, winY - wh * 0.18, D / 2 + 0.08)
+    addWindowLight(lx, winY, D / 2, 0, 0, 1)
+  }
+  placeFront(-1.55)
+  placeFront(1.65)
+
+  const placeSide = (xSign, lz) => {
+    const ww = 0.65
+    const wh = 0.85
+    const x = (xSign < 0 ? -1 : 1) * (W / 2 + 0.04)
+    addBox(house, 0.08, wh + 0.1, ww + 0.1, frame, x, winY, lz)
+    addGlass(0.05, wh * 0.4, ww * 0.4, x + xSign * 0.05, winY + wh * 0.18, lz - ww * 0.2)
+    addGlass(0.05, wh * 0.4, ww * 0.4, x + xSign * 0.05, winY + wh * 0.18, lz + ww * 0.2)
+    addGlass(0.05, wh * 0.4, ww * 0.4, x + xSign * 0.05, winY - wh * 0.18, lz - ww * 0.2)
+    addGlass(0.05, wh * 0.4, ww * 0.4, x + xSign * 0.05, winY - wh * 0.18, lz + ww * 0.2)
+    addWindowLight(x, winY, lz, xSign, 0, 0)
+  }
+  placeSide(-1, -0.4)
+  placeSide(1, -0.4)
+  placeSide(-1, 0.9)
+  placeSide(1, 0.9)
+
+  // small attic window
+  const aw = 0.55
+  const ah = 0.45
+  const ay = eaveY + roofRise * 0.35
+  addBox(house, aw + 0.08, ah + 0.08, 0.06, woodLine, 0, ay, D / 2 + 0.03)
+  addGlass(aw * 0.85, ah * 0.85, 0.04, 0, ay, D / 2 + 0.07)
+  addWindowLight(0, ay, D / 2, 0, 0, 1)
+
+  scene.add(house)
+  return { house, windowMats, windowLights }
+}
+
 export function buildWorld(scene) {
   scene.background = new THREE.Color(0x87aec8)
-  scene.fog = new THREE.Fog(0x87aec8, 22, 55)
+  scene.fog = new THREE.Fog(0x87aec8, 8, 28)
 
   const ambient = new THREE.AmbientLight(0xc8d6c0, 0.55)
   scene.add(ambient)
@@ -948,14 +1801,20 @@ export function buildWorld(scene) {
   sun.shadow.mapSize.set(1024, 1024)
   sun.shadow.camera.near = 1
   sun.shadow.camera.far = 90
-  sun.shadow.camera.left = -35
-  sun.shadow.camera.right = 35
-  sun.shadow.camera.top = 35
-  sun.shadow.camera.bottom = -35
+  sun.shadow.camera.left = -40
+  sun.shadow.camera.right = 55
+  sun.shadow.camera.top = 40
+  sun.shadow.camera.bottom = -40
   scene.add(sun)
 
   buildGround(scene)
-  const { windowMats, windowLights } = buildHouse(scene)
+  const main = buildHouse(scene)
+  const side = buildSideCottage(scene)
+  const father = buildFatherHouse(scene)
+  buildFatherGarden(scene)
+  buildWomanWithOarStatue(scene)
+  const terentyev = buildTerentyevHouse(scene)
+  buildTerentyevGarden(scene)
   buildFence(scene)
   buildBoardPile(scene)
   buildBareTreeNearPlot(scene)
@@ -963,10 +1822,20 @@ export function buildWorld(scene) {
   buildForest(scene)
 
   return {
-    spawn: new THREE.Vector3(0, 1.6, PLOT_D / 2 - 1),
+    spawn: new THREE.Vector3(0, 1.6, plotFrontZ() - 1),
     ambient,
     sun,
-    windowMats,
-    windowLights,
+    windowMats: [
+      ...main.windowMats,
+      ...side.windowMats,
+      ...father.windowMats,
+      ...terentyev.windowMats,
+    ],
+    windowLights: [
+      ...main.windowLights,
+      ...side.windowLights,
+      ...father.windowLights,
+      ...terentyev.windowLights,
+    ],
   }
 }
