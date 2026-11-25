@@ -6,6 +6,7 @@
  */
 
 export const DIFFICULTIES = [
+  { id: 'peace', label: 'Peace', coef: 0, noMobs: true },
   { id: 'low', label: 'Low', coef: 0.7 },
   { id: 'med', label: 'Med', coef: 1.0 },
   { id: 'high', label: 'High', coef: 1.35 },
@@ -42,7 +43,11 @@ export function getDifficultyId() {
 }
 
 export function getDifficulty() {
-  return DIFFICULTIES.find((d) => d.id === currentId) || DIFFICULTIES[1]
+  return DIFFICULTIES.find((d) => d.id === currentId) || DIFFICULTIES.find((d) => d.id === 'med')
+}
+
+export function isPeaceMode() {
+  return !!getDifficulty().noMobs
 }
 
 export function setDifficulty(id) {
@@ -130,6 +135,19 @@ export function getWavePlan(wave, coef = getCoef()) {
   const w = Math.max(1, wave | 0)
   const night = isNightWave(w)
   const k = coef
+
+  if (isPeaceMode() || k <= 0) {
+    return {
+      wave: w,
+      night,
+      zombies: 0,
+      climbers: 0,
+      zombieHp: 0,
+      heal: getHealTierForWave(w),
+      score: 0,
+      coef: 0,
+    }
+  }
 
   let zombies
   let climbers

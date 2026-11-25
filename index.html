@@ -50,7 +50,7 @@
         margin: 14px 0 6px; font-size: 13px; opacity: 0.7; text-align: left;
       }
       #diff-row {
-        display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px;
+        display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 10px;
       }
       #diff-row button {
         margin: 0; padding: 8px 4px; font-size: 13px;
@@ -114,14 +114,35 @@
           radial-gradient(ellipse at center, transparent 35%, rgba(140, 0, 0, 0.55) 100%),
           rgba(160, 0, 20, 0.22);
       }
+      #toast {
+        position: fixed; left: 50%; top: 18%;
+        transform: translate(-50%, -12px);
+        z-index: 8; pointer-events: none;
+        padding: 10px 18px;
+        background: rgba(18, 24, 32, 0.88);
+        border: 1px solid rgba(120, 160, 220, 0.55);
+        color: #d6e8ff;
+        font: 16px/1.35 Georgia, "Times New Roman", serif;
+        text-shadow: 0 1px 2px #000;
+        opacity: 0;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+        max-width: min(90vw, 420px);
+        text-align: center;
+      }
+      #toast.show {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
     </style>
   </head>
   <body>
     <div id="hint">Click / tap to play — WASD, shoot zombies, ESC = menu</div>
     <div id="crosshair"></div>
     <div id="hurt-flash" aria-hidden="true"></div>
+    <div id="toast" aria-live="polite"></div>
     <div id="hud">
       <div id="hp">HP: ♥♥♥♥♥♥♥♥♥♥</div>
+      <div id="ammo">Ammo: 12</div>
       <div id="kills">Kills: 0</div>
       <div id="wave">Wave: 1</div>
     </div>
@@ -140,6 +161,7 @@
         <div class="stats" id="menu-stats"></div>
         <div class="diff-label">Difficulty</div>
         <div id="diff-row" role="group" aria-label="Difficulty">
+          <button type="button" data-diff="peace">Peace</button>
           <button type="button" data-diff="low">Low</button>
           <button type="button" data-diff="med">Med</button>
           <button type="button" data-diff="high">High</button>
