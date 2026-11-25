@@ -308,40 +308,78 @@ export function createAudio() {
     applySfxGain()
   }
 
+  /** Bolt / hunting rifle crack — sharp transient + body boom (not airgun). */
   const playShoot = async () => {
     if (!sfxEnabled) return
     await resume()
     const t0 = ctx.currentTime
 
-    const o = ctx.createOscillator()
-    const og = ctx.createGain()
-    o.type = 'triangle'
-    o.frequency.setValueAtTime(180, t0)
-    o.frequency.exponentialRampToValueAtTime(55, t0 + 0.09)
-    og.gain.setValueAtTime(0.7, t0)
-    og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.14)
-    o.connect(og)
-    og.connect(sfxBus)
-    o.start(t0)
-    o.stop(t0 + 0.16)
+    // sharp crack (high transient)
+    const crack = ctx.createBufferSource()
+    crack.buffer = getNoise()
+    const crackHp = ctx.createBiquadFilter()
+    crackHp.type = 'highpass'
+    crackHp.frequency.value = 2800
+    crackHp.Q.value = 0.7
+    const crackG = ctx.createGain()
+    crackG.gain.setValueAtTime(1.15, t0)
+    crackG.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.045)
+    crack.connect(crackHp)
+    crackHp.connect(crackG)
+    crackG.connect(sfxBus)
+    crack.start(t0)
+    crack.stop(t0 + 0.05)
 
-    const src = ctx.createBufferSource()
-    src.buffer = getNoise()
-    const f = ctx.createBiquadFilter()
-    f.type = 'bandpass'
-    f.frequency.setValueAtTime(2200, t0)
-    f.frequency.exponentialRampToValueAtTime(400, t0 + 0.18)
-    f.Q.value = 0.8
-    const g = ctx.createGain()
-    g.gain.setValueAtTime(0.85, t0)
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22)
-    src.connect(f)
-    f.connect(g)
-    g.connect(sfxBus)
-    src.start(t0)
-    src.stop(t0 + 0.24)
+    // mid bark
+    const bark = ctx.createBufferSource()
+    bark.buffer = getNoise()
+    const barkBp = ctx.createBiquadFilter()
+    barkBp.type = 'bandpass'
+    barkBp.frequency.setValueAtTime(900, t0)
+    barkBp.frequency.exponentialRampToValueAtTime(320, t0 + 0.12)
+    barkBp.Q.value = 1.1
+    const barkG = ctx.createGain()
+    barkG.gain.setValueAtTime(0.95, t0)
+    barkG.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16)
+    bark.connect(barkBp)
+    barkBp.connect(barkG)
+    barkG.connect(sfxBus)
+    bark.start(t0)
+    bark.stop(t0 + 0.18)
 
-    tone(1200, t0 + 0.05, 0.03, 'square', 0.08, sfxBus, { attack: 0.001, release: 0.02 })
+    // low boom / recoil body
+    const boom = ctx.createOscillator()
+    const boomG = ctx.createGain()
+    boom.type = 'sine'
+    boom.frequency.setValueAtTime(130, t0)
+    boom.frequency.exponentialRampToValueAtTime(38, t0 + 0.22)
+    boomG.gain.setValueAtTime(0.95, t0)
+    boomG.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28)
+    boom.connect(boomG)
+    boomG.connect(sfxBus)
+    boom.start(t0)
+    boom.stop(t0 + 0.3)
+
+    // metallic ring
+    tone(1850, t0, 0.09, 'triangle', 0.18, sfxBus, { attack: 0.001, release: 0.07 })
+    tone(920, t0 + 0.01, 0.07, 'square', 0.06, sfxBus, { attack: 0.001, release: 0.05 })
+
+    // short room tail
+    const tail = ctx.createBufferSource()
+    tail.buffer = getNoise()
+    const tailLp = ctx.createBiquadFilter()
+    tailLp.type = 'lowpass'
+    tailLp.frequency.setValueAtTime(700, t0)
+    tailLp.frequency.exponentialRampToValueAtTime(180, t0 + 0.25)
+    const tailG = ctx.createGain()
+    tailG.gain.setValueAtTime(0.0001, t0)
+    tailG.gain.linearRampToValueAtTime(0.28, t0 + 0.02)
+    tailG.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.32)
+    tail.connect(tailLp)
+    tailLp.connect(tailG)
+    tailG.connect(sfxBus)
+    tail.start(t0)
+    tail.stop(t0 + 0.34)
   }
 
   const playMobDeath = async () => {
