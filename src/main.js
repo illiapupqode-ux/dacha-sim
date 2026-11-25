@@ -7,6 +7,8 @@ import { createHealthPickup } from './pickup.js'
 import { createAmmoSystem } from './ammo.js'
 import { getDifficulty, getDifficultyId, setDifficulty, getCoef } from './difficulty.js'
 import { createAudio } from './audio.js'
+import { renderBullets } from './hud.js'
+import { MAX_AMMO } from './ammo.js'
 
 const scene = new THREE.Scene()
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 36)
@@ -33,13 +35,9 @@ let paused = false
 let gameOver = false
 
 let ammo = null
-const updateHud = ({ kills, wave } = {}) => {
-  const k = document.getElementById('kills')
-  const w = document.getElementById('wave')
-  const a = document.getElementById('ammo')
-  if (k && kills != null) k.textContent = `Kills: ${kills}`
-  if (w && wave != null) w.textContent = `Wave: ${wave}`
-  if (a && ammo) a.textContent = `Ammo: ${ammo.getAmmo()}`
+const updateHud = () => {
+  if (!ammo) return
+  renderBullets(document.getElementById('hud-ammo'), ammo.getAmmo(), MAX_AMMO)
 }
 
 let toastTimer = 0
@@ -110,7 +108,7 @@ const healthPickup = createHealthPickup(scene, () => camera.position, {
   getNight: () => night.getNight(),
   getWave: () => zombies.getWave(),
 })
-updateHud({ kills: 0, wave: 1 })
+updateHud()
 
 function syncDiffButtons() {
   const id = getDifficultyId()
@@ -132,13 +130,14 @@ document.getElementById('diff-row')?.addEventListener('click', (e) => {
 syncDiffButtons()
 
 player.setShootHandler(() => {
-  if (paused || gameOver) return
+  if (paused || gameOver) return false
   if (!ammo.tryFire()) {
     showToast('Empty!', 900)
-    return
+    return false
   }
   audio.playShoot()
   zombies.tryShoot(camera)
+  return true
 })
 
 function openMenu(kind = 'pause') {

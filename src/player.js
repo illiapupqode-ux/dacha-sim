@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js'
 import { resolveWorldXZ } from './collision.js'
+import { renderHearts } from './hud.js'
 
 const SPEED = 6
 const EYE = 1.6
@@ -64,10 +65,11 @@ export function createPlayer(camera, domElement) {
 
   const fire = () => {
     if (!isActive()) return
+    // only kick / muzzle flash when a round actually fires
+    if (onShoot?.() === false) return
     kick = 1
     muzzleT = 0.08
     flash.visible = true
-    onShoot?.()
   }
 
   const beginMobilePlay = () => {
@@ -337,8 +339,7 @@ export function createPlayer(camera, domElement) {
   camera.position.set(0, EYE, 12)
 
   const updateHpUi = () => {
-    const el = document.getElementById('hp')
-    if (el) el.textContent = `HP: ${'♥'.repeat(Math.max(0, hp))}${'♡'.repeat(Math.max(0, MAX_HP - hp))}`
+    renderHearts(document.getElementById('hud-hp'), hp, MAX_HP)
   }
   updateHpUi()
 
