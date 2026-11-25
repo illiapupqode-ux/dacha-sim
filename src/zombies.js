@@ -21,7 +21,7 @@ import {
   zombieBackZ,
   zombieFrontZ,
 } from './collision.js'
-import { getWavePlan } from './difficulty.js'
+import { getSurge, getWavePlan } from './difficulty.js'
 
 const SPEED = 2.0
 const TERENTYEV_SPEED = SPEED * 2
@@ -134,6 +134,90 @@ export function makeZombie(kind = 'green') {
   })
 
   return g
+}
+
+const BODY_SEP = 1.05
+
+/** Next gap is a fresh random multiple of `every`, not a shared clock. */
+function rollSurgeWait(every) {
+  return every * (0.35 + Math.random() * 2.1)
+}
+
+function tickSurge(z, surge, dt) {
+  if (!surge || surge.duration <= 0 || surge.every <= 0) return 1
+  if (z.userData.surgeWait == null) {
+    z.userData.surgeWait = surge.every * (0.15 + Math.random() * 2.6)
+  }
+  if (z.userData.surgeLeft > 0) {
+    z.userData.surgeLeft -= dt
+    if (z.userData.surgeLeft > 0) return 1 + (z.userData.surgePercent || surge.percent) / 100
+    z.userData.surgeWait = rollSurgeWait(surge.every)
+    return 1
+  }
+  z.userData.surgeWait -= dt
+  if (z.userData.surgeWait <= 0) {
+    z.userData.surgeLeft = surge.duration * (0.55 + Math.random() * 0.9)
+    z.userData.surgePercent = surge.percent * (0.7 + Math.random() * 0.65)
+    return 1 + z.userData.surgePercent / 100
+  }
+  return 1
+}
+
+function clampMobFeet(z) {
+  const inZombieYard = insideZombiePlot(z.position.x, z.position.z, 0.1)
+  if (inZombieYard && z.userData.fromZombieYard && !z.userData.hasEntered) {
+    const c = clampInsideZombiePlot(z.position.x, z.position.z, 0.55)
+    z.position.x = c.x
+    z.position.z = c.z
+    return
+  }
+  const inside = insidePlot(z.position.x, z.position.z, 0.15)
+  const inAnyYard = insideAnyYard(z.position.x, z.position.z, 0.1)
+  const canEnter = z.userData.climber || z.userData.hasEntered || inside
+  const c = resolveZombieXZ(z.position.x, z.position.z, 0.55, { canEnter })
+  z.position.x = c.x
+  z.position.z = c.z
+}
+
+/** Push overlapping mobs apart so a crowd stays a crowd, not one stacked body. */
+function separateMobs(horde) {
+  const mobs = []
+  for (const z of horde) {
+    if (!z.userData.alive || z.userData.emerging || z.userData.climbing) continue
+    mobs.push(z)
+  }
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < mobs.length; i++) {
+      const a = mobs[i]
+      for (let j = i + 1; j < mobs.length; j++) {
+        const b = mobs[j]
+        let dx = b.position.x - a.position.x
+        let dz = b.position.z - a.position.z
+        let dist = Math.hypot(dx, dz)
+        if (dist >= BODY_SEP) continue
+        if (dist < 1e-3) {
+          const ang = i * 2.399963 + pass
+          dx = Math.cos(ang)
+          dz = Math.sin(ang)
+          dist = 1
+        }
+        const push = (BODY_SEP - dist) * 0.5
+        const nx = (dx / dist) * push
+        const nz = (dz / dist) * push
+        a.position.x -= nx
+        a.position.z -= nz
+        b.position.x += nx
+        b.position.z += nz
+      }
+    }
+    for (const z of mobs) clampMobFeet(z)
+  }
+}
+
+function setSurgeEyes(z, on) {
+  const mats = z.userData.eyeMats
+  if (!mats) return
+  for (const mat of mats) mat.emissiveIntensity = on ? 1.1 : 0
 }
 
 function findZombieRoot(obj) {
@@ -527,6 +611,7 @@ export function createZombieSystem(scene, getPlayerPos, onStats, hooks = {}) {
       }
     }
 
+    const surge = getSurge()
     for (let i = list.length - 1; i >= 0; i--) {
       if (frozen || paused) break
       const z = list[i]
@@ -543,6 +628,7 @@ export function createZombieSystem(scene, getPlayerPos, onStats, hooks = {}) {
       }
 
       if (!z.userData.alive) {
+        setSurgeEyes(z, false)
         z.userData.dieT = (z.userData.dieT || 0) + dt
         const t = z.userData.dieT
         const spin = z.userData.dieSpin || 1.5
@@ -567,6 +653,7 @@ export function createZombieSystem(scene, getPlayerPos, onStats, hooks = {}) {
       }
 
       if (z.userData.emerging) {
+        setSurgeEyes(z, false)
         z.userData.emergeT += dt
         z.position.y = Math.min(0, EMERGE_Y + z.userData.emergeT * EMERGE_SPEED)
         z.rotation.z = Math.sin(z.userData.emergeT * 8) * 0.08
@@ -581,6 +668,7 @@ export function createZombieSystem(scene, getPlayerPos, onStats, hooks = {}) {
 
       // climbing over a fence (out of zombie yard or into my plot)
       if (z.userData.climbing) {
+        setSurgeEyes(z, false)
         z.userData.climbT += dt
         const dur = z.userData.climbOut ? CLIMB_OUT_DUR : CLIMB_DUR
         const peak = z.userData.climbOut ? ZOMBIE_CLIMB_H : 2.2
@@ -662,8 +750,9 @@ export function createZombieSystem(scene, getPlayerPos, onStats, hooks = {}) {
       const dx = tx - z.position.x
       const dz = tz - z.position.z
       const distAim = Math.hypot(dx, dz) || 1
-      let nx = z.position.x + (dx / distAim) * SPEED * dt
-      let nz = z.position.z + (dz / distAim) * SPEED * dt
+      const surgeMul = tickSurge(z, surge, dt)
+      let nx = z.position.x + (dx / distAim) * SPEED * surgeMul * dt
+      let nz = z.position.z + (dz / distAim) * SPEED * surgeMul * dt
 
       if (inZombieYard && z.userData.fromZombieYard) {
         const c = clampInsideZombiePlot(nx, nz, 0.55)
@@ -679,6 +768,9 @@ export function createZombieSystem(scene, getPlayerPos, onStats, hooks = {}) {
       z.position.z = nz
       z.position.y = Math.sin(z.userData.bob) * 0.06
       z.lookAt(tx, z.position.y, tz)
+      const surging = surgeMul > 1
+      setSurgeEyes(z, surging)
+      if (surging) z.rotateX(-0.2)
 
       const dist = Math.hypot(p.x - z.position.x, p.z - z.position.z) || 1
 
@@ -690,6 +782,7 @@ export function createZombieSystem(scene, getPlayerPos, onStats, hooks = {}) {
         }
       }
     }
+    separateMobs(list)
   }
 
   const tryShoot = (camera) => {
