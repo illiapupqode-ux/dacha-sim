@@ -6,6 +6,7 @@ import { createNightCycle } from './night.js'
 import { createHealthPickup } from './pickup.js'
 import { createAmmoSystem } from './ammo.js'
 import { getDifficulty, getDifficultyId, setDifficulty, getCoef } from './difficulty.js'
+import { createAudio } from './audio.js'
 
 const scene = new THREE.Scene()
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 36)
@@ -55,9 +56,45 @@ ammo = createAmmoSystem(scene, () => camera.position, {
   onChange: () => updateHud(),
 })
 
+const audio = createAudio()
+const unlockAudio = () => {
+  audio.resume()
+  if (audio.isMusicEnabled()) audio.startMusic()
+}
+window.addEventListener('pointerdown', unlockAudio, { once: true })
+window.addEventListener('keydown', unlockAudio, { once: true })
+
+function syncAudioButtons() {
+  const m = document.getElementById('btn-music')
+  const s = document.getElementById('btn-sfx')
+  if (m) {
+    const on = audio.isMusicEnabled()
+    m.textContent = on ? 'Music: On' : 'Music: Off'
+    m.classList.toggle('off', !on)
+  }
+  if (s) {
+    const on = audio.isSfxEnabled()
+    s.textContent = on ? 'Effects: On' : 'Effects: Off'
+    s.classList.toggle('off', !on)
+  }
+}
+syncAudioButtons()
+
+document.getElementById('btn-music')?.addEventListener('click', () => {
+  audio.setMusicEnabled(!audio.isMusicEnabled())
+  syncAudioButtons()
+})
+document.getElementById('btn-sfx')?.addEventListener('click', () => {
+  audio.setSfxEnabled(!audio.isSfxEnabled())
+  syncAudioButtons()
+})
+
 const zombies = createZombieSystem(scene, () => camera.position, updateHud, {
   onTerentyevHit: () => showToast("You cant kill Terentevs!"),
-  onKill: () => ammo.onKill(),
+  onKill: () => {
+    ammo.onKill()
+    audio.playMobDeath()
+  },
 })
 const night = createNightCycle({
   scene,
@@ -100,6 +137,7 @@ player.setShootHandler(() => {
     showToast('Empty!', 900)
     return
   }
+  audio.playShoot()
   zombies.tryShoot(camera)
 })
 
@@ -108,12 +146,14 @@ function openMenu(kind = 'pause') {
   gameOver = kind === 'dead'
   zombies.setFrozen(true)
   player.setPaused(true)
+  audio.setPaused(true)
   menuTitle.textContent = kind === 'dead' ? 'You died' : 'Paused'
   menuSub.textContent =
     kind === 'dead' ? 'Zombies got you' : 'Spawn & mobs frozen — ESC / Resume'
   const d = getDifficulty()
   menuStats.textContent = `Kills: ${zombies.getKills()} · Wave: ${zombies.getWave()} · ${d.label} ×${getCoef()}`
   syncDiffButtons()
+  syncAudioButtons()
   menu?.classList.add('open')
   hint?.classList.add('hidden')
   document.getElementById('btn-resume').style.display = kind === 'dead' ? 'none' : 'block'
@@ -124,6 +164,7 @@ function closeMenu() {
   paused = false
   zombies.setFrozen(false)
   player.setPaused(false)
+  audio.setPaused(false)
   menu?.classList.remove('open')
   if (!player.isTouch) player.controls.lock()
 }
@@ -139,6 +180,8 @@ function restart() {
   healthPickup.reset()
   ammo.reset()
   player.setPaused(false)
+  audio.setPaused(false)
+  if (audio.isMusicEnabled()) audio.startMusic()
   menu?.classList.remove('open')
   document.getElementById('btn-resume').style.display = 'block'
   if (!player.isTouch) player.controls.lock()

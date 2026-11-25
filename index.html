@@ -58,6 +58,15 @@
       #diff-row button.active {
         background: #4a6b52; border-color: #9bbb9a; color: #fff;
       }
+      #audio-row {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px;
+      }
+      #audio-row button {
+        margin: 0; padding: 8px 6px; font-size: 13px;
+      }
+      #audio-row button.off {
+        opacity: 0.55; background: #243028;
+      }
       #mobile-ui {
         display: none; position: fixed; inset: 0; z-index: 6;
         pointer-events: none; touch-action: none;
@@ -166,6 +175,11 @@
           <button type="button" data-diff="med">Med</button>
           <button type="button" data-diff="high">High</button>
           <button type="button" data-diff="hell">Hell</button>
+        </div>
+        <div class="diff-label">Audio</div>
+        <div id="audio-row" role="group" aria-label="Audio">
+          <button type="button" id="btn-music">Music: On</button>
+          <button type="button" id="btn-sfx">Effects: On</button>
         </div>
         <button type="button" id="btn-resume">Resume</button>
         <button type="button" id="btn-restart">Restart</button>
