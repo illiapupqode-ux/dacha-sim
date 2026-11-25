@@ -5,12 +5,17 @@
  * Score: D = Z*(1+0.35*N) + C*1.8 - H*0.45  (then × difficulty coef for spawn scaling)
  */
 
+/**
+ * Low is the old Hell (1.75). Higher steps sit above that baseline.
+ * surge: once every `every` seconds, run `percent`% faster for `duration` seconds.
+ * Peace and Low do not surge.
+ */
 export const DIFFICULTIES = [
   { id: 'peace', label: 'Peace', coef: 0, noMobs: true },
-  { id: 'low', label: 'Low', coef: 0.7 },
-  { id: 'med', label: 'Med', coef: 1.0 },
-  { id: 'high', label: 'High', coef: 1.35 },
-  { id: 'hell', label: 'Hell', coef: 1.75 },
+  { id: 'low', label: 'Low', coef: 1.75 },
+  { id: 'med', label: 'Med', coef: 2.25, surge: { every: 7, duration: 1.4, percent: 40 } },
+  { id: 'high', label: 'High', coef: 2.85, surge: { every: 5.5, duration: 1.7, percent: 60 } },
+  { id: 'hell', label: 'Hell', coef: 3.5, surge: { every: 4, duration: 2, percent: 80 } },
 ]
 
 const BLOCKS = [
@@ -63,6 +68,17 @@ export function setDifficulty(id) {
 
 export function getCoef() {
   return getDifficulty().coef
+}
+
+/** Speed burst for this coef. Null on Peace and Low. */
+export function getSurge(coef = getCoef()) {
+  if (!(coef > 0)) return null
+  let best = null
+  for (const d of DIFFICULTIES) {
+    if (!d.surge || d.coef > coef + 1e-9) continue
+    if (!best || d.coef > best.coef) best = d
+  }
+  return best ? best.surge : null
 }
 
 /** Locate which day/night segment wave `w` sits in. */
@@ -128,6 +144,7 @@ function clampInt(n, lo, hi) {
  * @returns {{
  *   wave: number, night: boolean, zombies: number, climbers: number,
  *   zombieHp: number, heal: null|{hearts:number,id:string,color:number,emissive:number,light:number},
+ *   surge: null|{every:number,duration:number,percent:number},
  *   score: number, coef: number
  * }}
  */
@@ -144,31 +161,46 @@ export function getWavePlan(wave, coef = getCoef()) {
       climbers: 0,
       zombieHp: 0,
       heal: getHealTierForWave(w),
+      surge: null,
       score: 0,
       coef: 0,
     }
   }
 
+  // Spawn counts grow with difficulty. HP stays inside one magazine (see killsPerMagazine).
+  const nightCap = clampInt(40 * (k / 1.75), 40, 72)
+  const dayCap = clampInt(48 * (k / 1.75), 48, 90)
+  const climberMul = Math.min(1.25, k) + Math.max(0, (k - 1.75) * 0.35)
+  const nightClimberMax = k >= 3.2 ? 8 : k >= 2.6 ? 7 : k >= 2.1 ? 6 : 5
+
   let zombies
   let climbers
   if (night) {
-    zombies = clampInt((3 + Math.floor(0.7 * w)) * k, 3, 40)
+    zombies = clampInt((3 + Math.floor(0.7 * w)) * k, 3, nightCap)
     const rate = 0.18 + 0.02 * w
-    climbers = clampInt(zombies * rate * Math.min(1.25, k), 1, Math.min(5, zombies))
+    climbers = clampInt(zombies * rate * climberMul, 1, Math.min(nightClimberMax, zombies))
   } else {
-    zombies = clampInt((4 + Math.floor(1.4 * w)) * k, 4, 48)
-    climbers = clampInt(Math.floor((w - 1) / 5) * (k >= 1.3 ? 1.2 : 1), 0, 3)
+    const dayMul = k >= 3.2 ? 2 : k >= 2.6 ? 1.6 : k >= 2.1 ? 1.4 : k >= 1.3 ? 1.2 : 1
+    const dayCapClimbers = k >= 3.2 ? 6 : k >= 2.6 ? 5 : k >= 2.1 ? 4 : 3
+    zombies = clampInt((4 + Math.floor(1.4 * w)) * k, 4, dayCap)
+    climbers = clampInt(Math.floor((w - 1) / 5) * dayMul, 0, dayCapClimbers)
     climbers = Math.min(climbers, Math.floor(zombies * 0.25))
   }
 
-  const zombieHp = clampInt(2 + Math.floor(w / 6) + (k >= 1.5 ? 1 : 0), 2, 6)
+  // Low matches old Hell (3, then 4). High/Hell start at 4. Never past 4:
+  // 5+ shots cannot earn the next mag from a 12-round magazine.
+  const hpBonus = k >= 2.6 ? 2 : k >= 1.5 ? 1 : 0
+  const zombieHp = clampInt(2 + Math.floor(w / 6) + hpBonus, 2, 4)
   const heal = getHealTierForWave(w)
-  // on harder modes, slightly less heal
   let healOut = heal
-  if (heal && k >= 1.5) {
+  if (heal && k >= 3.2) {
+    healOut = { ...heal, hearts: Math.max(1, heal.hearts - 3) }
+  } else if (heal && k >= 2.6) {
+    healOut = { ...heal, hearts: Math.max(1, heal.hearts - 2) }
+  } else if (heal && k >= 2.1) {
+    healOut = { ...heal, hearts: Math.max(2, heal.hearts - 2) }
+  } else if (heal && k >= 1.5) {
     healOut = { ...heal, hearts: Math.max(2, heal.hearts - 1) }
-  } else if (heal && k <= 0.75) {
-    healOut = { ...heal, hearts: heal.hearts + 1 }
   }
 
   const H = healOut?.hearts ?? 0
@@ -183,6 +215,7 @@ export function getWavePlan(wave, coef = getCoef()) {
     climbers,
     zombieHp,
     heal: healOut,
+    surge: getSurge(k),
     score,
     coef: k,
   }
@@ -190,4 +223,14 @@ export function getWavePlan(wave, coef = getCoef()) {
 
 export function difficultyScore(wave, coef = getCoef()) {
   return getWavePlan(wave, coef).score
+}
+
+/**
+ * Kills that earn one magazine.
+ * Those kills must fit in a full mag and leave at least 3 rounds.
+ */
+export function killsPerMagazine(zombieHp, magSize = 12) {
+  const hp = Math.max(1, zombieHp | 0)
+  const budget = Math.max(hp, magSize - 3)
+  return Math.max(1, Math.min(3, Math.floor(budget / hp)))
 }

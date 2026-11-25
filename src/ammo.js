@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { getWavePlan, killsPerMagazine } from './difficulty.js'
 import {
   PLOT_W,
   PLOT_D,
@@ -16,7 +17,6 @@ import {
 
 export const MAX_AMMO = 12
 const MAX_MAGS_ON_GROUND = 3
-const KILLS_PER_MAG = 3
 
 function makeMat(color, emissive = 0x000000, emissiveIntensity = 0) {
   return new THREE.MeshLambertMaterial({
@@ -93,7 +93,7 @@ function makeMagazine() {
 
 /**
  * Ammo counter (12) + glowing magazine pickups.
- * Every 3 kills drops one mag (max 3 on the ground).
+ * Mag drops often enough that one full magazine can earn the next one.
  */
 export function createAmmoSystem(scene, getPlayerPos, { onChange } = {}) {
   let ammo = MAX_AMMO
@@ -139,9 +139,11 @@ export function createAmmoSystem(scene, getPlayerPos, { onChange } = {}) {
     },
 
     /** Call after a real zombie kill (not Terentyev). */
-    onKill() {
+    onKill(wave = 1) {
       killsTowardDrop += 1
-      if (killsTowardDrop >= KILLS_PER_MAG) {
+      const hp = getWavePlan(wave).zombieHp || 3
+      const need = killsPerMagazine(hp, MAX_AMMO)
+      if (killsTowardDrop >= need) {
         killsTowardDrop = 0
         spawnMag()
       }

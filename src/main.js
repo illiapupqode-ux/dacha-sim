@@ -5,7 +5,7 @@ import { createZombieSystem } from './zombies.js'
 import { createNightCycle } from './night.js'
 import { createHealthPickup } from './pickup.js'
 import { createAmmoSystem } from './ammo.js'
-import { getDifficulty, getDifficultyId, setDifficulty, getCoef } from './difficulty.js'
+import { getDifficulty, getDifficultyId, setDifficulty } from './difficulty.js'
 import { createAudio } from './audio.js'
 import { renderBullets } from './hud.js'
 import { MAX_AMMO } from './ammo.js'
@@ -90,7 +90,7 @@ document.getElementById('btn-sfx')?.addEventListener('click', () => {
 const zombies = createZombieSystem(scene, () => camera.position, updateHud, {
   onTerentyevHit: () => showToast("You cant kill Terentevs!"),
   onKill: () => {
-    ammo.onKill()
+    ammo.onKill(zombies.getWave())
     audio.playMobDeath()
   },
 })
@@ -124,7 +124,7 @@ document.getElementById('diff-row')?.addEventListener('click', (e) => {
   syncDiffButtons()
   if (menuStats) {
     const d = getDifficulty()
-    menuStats.textContent = `Kills: ${zombies.getKills()} · Wave: ${zombies.getWave()} · ${d.label} ×${getCoef()}`
+    menuStats.textContent = `Kills: ${zombies.getKills()} · Wave: ${zombies.getWave()} · ${d.label}`
   }
 })
 syncDiffButtons()
@@ -150,7 +150,7 @@ function openMenu(kind = 'pause') {
   menuSub.textContent =
     kind === 'dead' ? 'Zombies got you' : 'Spawn & mobs frozen — ESC / Resume'
   const d = getDifficulty()
-  menuStats.textContent = `Kills: ${zombies.getKills()} · Wave: ${zombies.getWave()} · ${d.label} ×${getCoef()}`
+  menuStats.textContent = `Kills: ${zombies.getKills()} · Wave: ${zombies.getWave()} · ${d.label}`
   syncDiffButtons()
   syncAudioButtons()
   menu?.classList.add('open')
